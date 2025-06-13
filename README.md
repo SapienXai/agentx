@@ -150,4 +150,6 @@ Contributions are welcome! If you have an idea for a new feature or have found a
 
 ---
 
-MIT License
+## License
+
+This project is released under the [MIT License](LICENSE).
