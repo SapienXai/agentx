@@ -3,6 +3,14 @@
 const fs = require('fs');
 const path = require('path');
 const puppeteer = require('puppeteer');
+
+const DEFAULT_CHROME_PATHS = {
+  win32: 'C\\\Program Files\\\Google\\\Chrome\\\Application\\\chrome.exe',
+  darwin: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+  linux: '/usr/bin/google-chrome'
+};
+
+const CHROME_PATH = process.env.CHROME_PATH || DEFAULT_CHROME_PATHS[process.platform] || '/usr/bin/google-chrome';
 const { createPlan, decideNextBrowserAction } = require('./agent_api.js'); // Import createPlan here
 
 const USER_DATA_DIR = path.join(__dirname, 'chrome_session_data');
@@ -58,12 +66,12 @@ async function simplifyHtml(page) {
 // +++ THIS IS THE CORRECTED FUNCTION WITH DYNAMIC RE-PLANNING +++
 async function runAutonomousAgent(startUrl, taskSummary, strategy, onLog, agentControl) {
   onLog(`🚀 Launching browser with persistent session data...`);
-  const browser = await puppeteer.launch({ 
-    headless: false, 
-    executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', 
-    args: ['--no-sandbox', '--disable-setuid-sandbox', '--start-maximized'], 
-    userDataDir: USER_DATA_DIR, 
-    defaultViewport: null 
+  const browser = await puppeteer.launch({
+    headless: false,
+    executablePath: CHROME_PATH,
+    args: ['--no-sandbox', '--disable-setuid-sandbox', '--start-maximized'],
+    userDataDir: USER_DATA_DIR,
+    defaultViewport: null
   });
   
   let page = null;
