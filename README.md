@@ -99,7 +99,12 @@ Follow these steps to get the BrowserX Agent running on your local machine.
     CHROME_PATH="/path/to/google-chrome"
 
     ```
+
+    *Replace the placeholder with your actual OpenAI API key.*
+    If this variable is missing, the application will log an error and exit on startup.
+
     *Replace the placeholders with your actual values. `CHROME_PATH` defaults to a common location for your operating system if omitted.*
+
 
 4.  **Run the application:**
     ```bash
