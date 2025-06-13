@@ -3,13 +3,14 @@
 const fs = require('fs');
 const path = require('path');
 const puppeteer = require('puppeteer');
-const { decideNextBrowserAction } = require('./agent_api.js');
+const { createPlan, decideNextBrowserAction } = require('./agent_api.js'); // Import createPlan here
 
 const USER_DATA_DIR = path.join(__dirname, 'chrome_session_data');
 const MAX_AGENT_STEPS = 15;
+const MAX_ACTION_HISTORY = 4;
 
 // This function simplifies the page's HTML to only include interactive elements...
-// ... (simplifyHtml function remains unchanged) ...
+// ... (simplifyHtml function is unchanged but included for completeness) ...
 async function simplifyHtml(page) {
     return await page.evaluate(() => {
         const generateStableId = (el) => {
@@ -54,9 +55,8 @@ async function simplifyHtml(page) {
 }
 
 
-// +++ THIS IS THE CORRECTED FUNCTION WITH SCREENSHOT CAPABILITIES +++
-// The main function that orchestrates the agent's actions in the browser.
-async function runAutonomousAgent(startUrl, goal, strategy, onLog, agentControl) {
+// +++ THIS IS THE CORRECTED FUNCTION WITH DYNAMIC RE-PLANNING +++
+async function runAutonomousAgent(startUrl, taskSummary, strategy, onLog, agentControl) {
   onLog(`🚀 Launching browser with persistent session data...`);
   const browser = await puppeteer.launch({ 
     headless: false, 
@@ -67,11 +67,12 @@ async function runAutonomousAgent(startUrl, goal, strategy, onLog, agentControl)
   });
   
   let page = null;
+  const originalGoal = taskSummary; // Keep the original goal for re-planning
 
   try {
     page = (await browser.pages())[0] || await browser.newPage();
 
-    onLog('⚡️ Enabling network interception to block non-essential resources...');
+    onLog('⚡️ Enabling network interception...');
     await page.setRequestInterception(true);
     page.on('request', (req) => {
       const blockList = ['image', 'stylesheet', 'font', 'media', 'csp_report'];
@@ -79,12 +80,13 @@ async function runAutonomousAgent(startUrl, goal, strategy, onLog, agentControl)
       else req.continue();
     });
 
-    onLog(`▶️ Session loaded automatically from cache.`);
+    onLog(`▶️ Session loaded automatically.`);
     onLog(`🚀 Navigating to ${startUrl}...`);
     await page.goto(startUrl, { waitUntil: 'networkidle2' });
     
     let previousAction = null;
     let previousState = { url: '', html: '' };
+    let actionHistory = [];
 
     for (let i = 0; i < MAX_AGENT_STEPS; i++) {
       if (agentControl && agentControl.stop) {
@@ -97,51 +99,83 @@ async function runAutonomousAgent(startUrl, goal, strategy, onLog, agentControl)
       const simplifiedHtml = await simplifyHtml(page);
       const currentURL = page.url();
 
-      // +++ NEW: Take a screenshot for the vision model +++
       onLog("📸 Taking screenshot for analysis...");
       const screenshotBase64 = await page.screenshot({ 
-          encoding: 'base64',
-          type: 'jpeg', // JPEG is more compact than PNG for smaller API payloads
-          quality: 75   // A good balance of size and quality
+          encoding: 'base64', type: 'jpeg', quality: 90
       });
 
       const isStuck = currentURL === previousState.url && simplifiedHtml === previousState.html;
       if (isStuck) {
-          onLog('⚠️ Agent seems to be stuck. The last action had no effect. Forcing a new action.');
+          onLog('⚠️ Agent seems to be stuck. The last action had no effect.');
       }
       previousState = { url: currentURL, html: simplifiedHtml };
 
       let command;
       try {
-        // +++ UPDATED: Pass the screenshot to the decision-making function +++
-        command = await decideNextBrowserAction(goal, strategy, currentURL, simplifiedHtml, screenshotBase64, previousAction, isStuck, onLog);
+        command = await decideNextBrowserAction(taskSummary, strategy, currentURL, simplifiedHtml, screenshotBase64, previousAction, isStuck, actionHistory, onLog);
       } catch (apiError) {
-          onLog(`🧠 API call failed for this step. Will retry on the next loop. Error: ${apiError.message}`);
+          onLog(`🧠 API call failed for this step. Will retry. Error: ${apiError.message}`);
           continue;
       }
+      
       previousAction = command;
+      actionHistory.unshift(command);
+      if (actionHistory.length > MAX_ACTION_HISTORY) actionHistory.pop();
 
       switch (command.action) {
+        // +++ NEW: Add the 'replan' action case +++
+        case 'replan':
+          onLog(`🤔 Agent requested a re-plan. Reason: ${command.reason}`);
+          const newGoalPrompt = `Original goal: "${originalGoal}". Re-plan context: "${command.reason}"`;
+          
+          const newPlan = await createPlan(newGoalPrompt, onLog);
+          
+          // Update the agent's current plan
+          taskSummary = newPlan.taskSummary;
+          strategy = newPlan.strategy;
+          startUrl = newPlan.targetURL;
+          
+          onLog(`✅ New plan received! New summary: "${taskSummary}"`);
+          onLog(`🚀 Navigating to new start URL: ${startUrl}`);
+          
+          await page.goto(startUrl, { waitUntil: 'networkidle2' });
+          
+          // Reset history for the new plan
+          actionHistory = [];
+          previousAction = null;
+          
+          continue; // Skip to the next loop iteration with the new plan
+
         case 'type':
-          onLog(`▶️ Action: Typing text into selector ${command.selector}`);
+          onLog(`▶️ Action: Typing "${command.text}" into ${command.selector}`);
           await page.waitForSelector(command.selector, { visible: true });
           await page.type(command.selector, command.text, { delay: 100 });
           break;
+
         case 'click':
-          onLog(`▶️ Action: Clicking selector ${command.selector}`);
-          await page.waitForSelector(command.selector, { visible: true });
-          // Using a robust click method
-          await page.evaluate(selector => document.querySelector(selector).click(), command.selector);
+          if (command.selector) {
+            onLog(`▶️ Action: Clicking selector ${command.selector}`);
+            await page.waitForSelector(command.selector, { visible: true });
+            await page.evaluate(selector => document.querySelector(selector).click(), command.selector);
+          } else if (command.x !== undefined && command.y !== undefined) {
+            onLog(`▶️ Action: Clicking coordinates (X:${command.x}, Y:${command.y})`);
+            if (command.reason) onLog(`   Reason: ${command.reason}`);
+            await page.mouse.click(command.x, command.y);
+          } else {
+            throw new Error('Click command is missing both selector and coordinates.');
+          }
           break;
+
         case 'think':
           onLog(`🤔 Agent is thinking: ${command.thought}`);
           break;
         case 'wait':
           onLog(`⏸️ Action: Wait. Reason: ${command.reason}`);
-          onLog('🟡 Please complete the required action in the browser (e.g., login)...');
+          onLog('🟡 Please complete the required action in the browser...');
           await page.waitForNavigation({ timeout: 0, waitUntil: 'networkidle2' });
           onLog('✅ User action detected. Resuming agent...');
           previousAction = null;
+          actionHistory = [];
           break;
         case 'finish':
           onLog(`✅ Action: Finish. ${command.summary}`);

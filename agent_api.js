@@ -4,7 +4,7 @@ const axios = require("axios");
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
-// +++ THIS FUNCTION IS UNCHANGED +++
+// +++ This function is unchanged but included for completeness +++
 async function createPlan(userGoal, onLog = console.log) {
     const maxRetries = 2;
     let lastError = null;
@@ -37,44 +37,49 @@ async function createPlan(userGoal, onLog = console.log) {
     throw new Error(`AI failed to generate a valid plan after ${maxRetries} attempts. Last error: ${lastError}`);
 }
 
-// +++ THIS IS THE CORRECTED FUNCTION WITH A STRICT LOGIN HANDLER +++
-async function decideNextBrowserAction(goal, strategy, currentURL, simplifiedHtml, screenshotBase64, previousAction, isStuck, onLog = console.log) {
-    onLog(`🧠 Agent is thinking about the next action (with vision)...`);
+// +++ THIS IS THE CORRECTED FUNCTION WITH RE-PLANNING CAPABILITIES +++
+async function decideNextBrowserAction(goal, strategy, currentURL, simplifiedHtml, screenshotBase64, previousAction, isStuck, actionHistory = [], onLog = console.log) {
+    onLog(`🧠 Agent is thinking about the next action (with vision & memory)...`);
     try {
-        const systemPrompt = `You are a web agent with vision. You follow a strict algorithm to decide your next action.
+        const systemPrompt = `You are an expert web agent. Your primary tool is vision. You analyze a screenshot and a simplified list of HTML elements to decide the next action.
 
-# AGENT ALGORITHM & RULES (Follow in order)
-1.  **GOAL COMPLETION CHECK:** First, analyze the screenshot. Is the goal already complete? (e.g., text like "Post successful," "Message sent," or "Welcome back!"). If YES, you MUST use the \`finish\` action.
-
-2.  **LOGIN/SIGNUP HANDLER (CRITICAL):** Second, check if the page is a login or signup form.
-    -   If the screenshot shows input fields for "email," "username," or "password," you MUST use the \`wait\` action to pause for the user.
-    -   Your reason for waiting should be "Waiting for user to complete login/signup."
-    -   **DO NOT** attempt to \`type\` in email or password fields. You do not have credentials.
-
-3.  **STUCK CHECK:** If the system reports \`LOOP DETECTED: true\`, your previous action had no effect. You MUST try a DIFFERENT action. Do not repeat the last one.
-
-4.  **ACTION SELECTION:** If none of the above rules apply, analyze the screenshot and the HTML element list to determine the best next step to achieve your goal. Choose from \`click\`, \`type\`, or \`think\`.
+# CORE LOGIC (Follow in Order):
+1.  **GOAL COMPLETION CHECK:** Analyze the screenshot for signs of success (e.g., "Post successful," "Message sent"). If complete, you MUST use \`finish\`.
+2.  **RE-PLANNING CHECK (CRITICAL):** Is the page an error (e.g., 404 Not Found), or is the initial strategy clearly impossible from the current page? For example, if your strategy is "Click the blog post button" but you are on a login page. If so, you MUST use the \`replan\` action to ask for a new strategy.
+3.  **LOGIN/SIGNUP HANDLER:** If you see a login/signup form, you MUST use \`wait\`. Do not try to type credentials.
+4.  **ACTION SELECTION:** Based on the visual evidence, choose the next logical action.
+    -   If an element is in the HTML list, prefer clicking it with a \`selector\`.
+    -   If an element is visible but NOT in the HTML list, you MUST use coordinates \`x\` and \`y\` as a fallback.
 
 # ACTION FORMAT (VALID JSON ONLY)
--   \`{"action": "type", "selector": "[data-agent-id='...']", "text": "..."}\` (Use for any input field EXCEPT login/password)
--   \`{"action": "click", "selector": "[data-agent-id='...']"}\`
+-   \`{"action": "replan", "reason": "A brief but clear explanation of why the old plan failed."}\`
+-   \`{"action": "click", "selector": "[data-agent-id='...']"}\` (Primary Method)
+-   \`{"action": "click", "x": <number>, "y": <number>, "reason": "Clicked on element not in HTML list."}\` (Fallback Method)
+-   \`{"action": "type", "selector": "[data-agent-id='...']", "text": "..."}\`
 -   \`{"action": "wait", "reason": "Waiting for user to complete login/signup."}\`
--   \`{"action": "think", "thought": "I am unsure what to do next, I will pause to re-evaluate."}\`
+-   \`{"action": "think", "thought": "Briefly explain your reasoning if you are unsure."}\`
 -   \`{"action": "finish", "summary": "Goal is complete. [Your summary]"}\``;
+
+        let historyLog = "No history yet.";
+        if (actionHistory && actionHistory.length > 0) {
+            historyLog = actionHistory.map((action, index) => `${index + 1}. ${JSON.stringify(action)}`).join('\n');
+        }
 
         const userPrompt = `## CURRENT STATE
 -   **Overall Goal:** "${goal}"
--   **Your Strategy:** "${strategy}"
+-   **Current Strategy:** "${strategy}"
 -   **Current URL:** \`${currentURL}\`
--   **Previous Action:** \`${previousAction ? JSON.stringify(previousAction) : "none"}\`
--   **LOOP DETECTED:** \`${isStuck}\` (If true, you MUST try a different action)
+-   **LOOP DETECTED:** \`${isStuck}\` (If true, you MUST try a new action)
 
-## CURRENT PAGE INTERACTIVE ELEMENTS
+## RECENT ACTION HISTORY
+${historyLog}
+
+## INTERACTIVE ELEMENTS LIST (May be incomplete)
 \`\`\`html
 ${simplifiedHtml}
 \`\`\`
 
-Based on your analysis of the screenshot and the strict algorithm, what is the single next action JSON?`;
+**Your Task:** Analyze the screenshot. Based on your core logic, decide the single next JSON action. If the current strategy is failing, use 'replan'.`;
 
         const response = await axios.post("https://api.openai.com/v1/chat/completions", {
             model: "gpt-4o-mini",
@@ -88,7 +93,7 @@ Based on your analysis of the screenshot and the strict algorithm, what is the s
                             type: "image_url",
                             image_url: {
                                 url: `data:image/jpeg;base64,${screenshotBase64}`,
-                                detail: "low"
+                                detail: "high"
                             }
                         }
                     ]
@@ -104,6 +109,5 @@ Based on your analysis of the screenshot and the strict algorithm, what is the s
         throw error;
     }
 }
-
 
 module.exports = { createPlan, decideNextBrowserAction };
