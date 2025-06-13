@@ -18,7 +18,7 @@ const qrcode = require('qrcode'); // +++ NEW
 const { createPlan } = require('./agent_api.js');
 const { runAutonomousAgent } = require('./puppeteer_executor.js');
 
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 const agentControl = { stop: false };
 
 function getLocalIpAddress() {
@@ -63,8 +63,8 @@ function createWindow() {
 
     // --- API ENDPOINTS ---
     
-    // +++ THIS IS THE NEW ENDPOINT +++
-    expressApp.get('/api/get-qr-code', async (req, res) => {
+    // +++ QR code endpoint +++
+    expressApp.get('/api/qr-code', async (req, res) => {
         try {
             const qrCodeDataUrl = await qrcode.toDataURL(serverUrl, {
                 errorCorrectionLevel: 'H',

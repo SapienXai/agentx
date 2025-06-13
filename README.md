@@ -86,14 +86,25 @@ Follow these steps to get the BrowserX Agent running on your local machine.
     ```
 
 3.  **Set up your environment variables:**
-    Create a file named `.env` in the root of the project directory. This file will hold your OpenAI API key.
+    Create a file named `.env` in the root of the project directory. This file holds your OpenAI API key and optional configuration values.
 
     ```ini
     # .env
     OPENAI_API_KEY="sk-YourSecretOpenAIApiKeyHere"
+
+    # Optionally override the default port (3000)
+    PORT=8080
+
+    # Optional: specify the path to your Chrome executable
+    CHROME_PATH="/path/to/google-chrome"
+
     ```
+
     *Replace the placeholder with your actual OpenAI API key.*
     If this variable is missing, the application will log an error and exit on startup.
+
+    *Replace the placeholders with your actual values. `CHROME_PATH` defaults to a common location for your operating system if omitted.*
+
 
 4.  **Run the application:**
     ```bash
@@ -123,6 +134,7 @@ This tab shows a list of all tasks you have run, along with their status: `Compl
 -   To control the agent from your phone, navigate to this tab on your desktop.
 -   Open the camera app on your phone and scan the QR code.
 -   This will open the web interface in your phone's browser, giving you full control.
+-   If you need the code manually, visit `http://<your-ip>:PORT/api/qr-code`.
 -   **Note:** Your phone must be connected to the same Wi-Fi network as your computer.
 
 ## Future Improvements
