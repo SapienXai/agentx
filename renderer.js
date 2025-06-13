@@ -116,7 +116,7 @@ const fetchQrCode = async () => {
     qrCodeImage.classList.add('d-none');
 
     try {
-        const response = await fetch('/api/get-qr-code');
+        const response = await fetch('/api/qr-code');
         const data = await response.json();
         if (data.success) {
             qrCodeImage.src = data.qrCode;

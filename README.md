@@ -91,8 +91,13 @@ Follow these steps to get the BrowserX Agent running on your local machine.
     ```ini
     # .env
     OPENAI_API_KEY="sk-YourSecretOpenAIApiKeyHere"
+
+    # Optionally override the default port (3000)
+    PORT=8080
+
     # Optional: specify the path to your Chrome executable
     CHROME_PATH="/path/to/google-chrome"
+
     ```
     *Replace the placeholders with your actual values. `CHROME_PATH` defaults to a common location for your operating system if omitted.*
 
@@ -124,6 +129,7 @@ This tab shows a list of all tasks you have run, along with their status: `Compl
 -   To control the agent from your phone, navigate to this tab on your desktop.
 -   Open the camera app on your phone and scan the QR code.
 -   This will open the web interface in your phone's browser, giving you full control.
+-   If you need the code manually, visit `http://<your-ip>:PORT/api/qr-code`.
 -   **Note:** Your phone must be connected to the same Wi-Fi network as your computer.
 
 ## Future Improvements
