@@ -2,7 +2,8 @@
 
 // --- STATE ---
 let currentPlan = null;
-let taskHistory = []; 
+// Load task history from localStorage if available
+let taskHistory = [];
 
 // --- SCREEN SELECTORS ---
 const screens = document.querySelectorAll('.screen');
@@ -56,6 +57,9 @@ const logMessage = (message) => {
 
 // ... (renderHistory function is unchanged) ...
 const renderHistory = () => {
+    // Persist history to localStorage
+    localStorage.setItem('taskHistory', JSON.stringify(taskHistory));
+
     if (taskHistory.length === 0) {
         noHistoryMessage.classList.remove('d-none');
         historyList.innerHTML = '';
@@ -229,6 +233,16 @@ stopButton.addEventListener('click', async () => {
 
 // --- INITIALIZATION ---
 document.addEventListener('DOMContentLoaded', () => {
+    // Load any previously stored history
+    const stored = localStorage.getItem('taskHistory');
+    if (stored) {
+        try {
+            taskHistory = JSON.parse(stored);
+        } catch (err) {
+            console.error('Failed to parse stored history', err);
+            taskHistory = [];
+        }
+    }
     showScreen('home-screen');
     renderHistory();
     statusLog.textContent = 'Waiting for instructions...';
