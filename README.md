@@ -86,15 +86,20 @@ Follow these steps to get the BrowserX Agent running on your local machine.
     ```
 
 3.  **Set up your environment variables:**
-    Create a file named `.env` in the root of the project directory. This file will hold your OpenAI API key.
+    Create a file named `.env` in the root of the project directory. This file holds your OpenAI API key and optional configuration values.
 
     ```ini
     # .env
     OPENAI_API_KEY="sk-YourSecretOpenAIApiKeyHere"
+
     # Optionally override the default port (3000)
     PORT=8080
+
+    # Optional: specify the path to your Chrome executable
+    CHROME_PATH="/path/to/google-chrome"
+
     ```
-    *Replace the placeholder with your actual OpenAI API key.*
+    *Replace the placeholders with your actual values. `CHROME_PATH` defaults to a common location for your operating system if omitted.*
 
 4.  **Run the application:**
     ```bash
