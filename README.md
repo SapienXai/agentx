@@ -93,6 +93,7 @@ Follow these steps to get the BrowserX Agent running on your local machine.
     OPENAI_API_KEY="sk-YourSecretOpenAIApiKeyHere"
     ```
     *Replace the placeholder with your actual OpenAI API key.*
+    If this variable is missing, the application will log an error and exit on startup.
 
 4.  **Run the application:**
     ```bash

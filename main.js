@@ -2,6 +2,12 @@
 
 require('dotenv').config();
 
+if (!process.env.OPENAI_API_KEY) {
+    console.error('Error: OPENAI_API_KEY environment variable is not set.');
+    console.error('Create a .env file with OPENAI_API_KEY or set it in your environment.');
+    process.exit(1);
+}
+
 const { app, BrowserWindow } = require('electron');
 const path = require('path');
 const http = require('http');
