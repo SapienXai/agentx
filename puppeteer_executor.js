@@ -54,7 +54,7 @@ async function simplifyHtml(page) {
 }
 
 
-// +++ THIS IS THE CORRECTED FUNCTION +++
+// +++ THIS IS THE CORRECTED FUNCTION WITH SCREENSHOT CAPABILITIES +++
 // The main function that orchestrates the agent's actions in the browser.
 async function runAutonomousAgent(startUrl, goal, strategy, onLog, agentControl) {
   onLog(`🚀 Launching browser with persistent session data...`);
@@ -87,7 +87,6 @@ async function runAutonomousAgent(startUrl, goal, strategy, onLog, agentControl)
     let previousState = { url: '', html: '' };
 
     for (let i = 0; i < MAX_AGENT_STEPS; i++) {
-      // Check for stop signal at the beginning of each step.
       if (agentControl && agentControl.stop) {
         throw new Error('Agent stopped by user.');
       }
@@ -98,6 +97,14 @@ async function runAutonomousAgent(startUrl, goal, strategy, onLog, agentControl)
       const simplifiedHtml = await simplifyHtml(page);
       const currentURL = page.url();
 
+      // +++ NEW: Take a screenshot for the vision model +++
+      onLog("📸 Taking screenshot for analysis...");
+      const screenshotBase64 = await page.screenshot({ 
+          encoding: 'base64',
+          type: 'jpeg', // JPEG is more compact than PNG for smaller API payloads
+          quality: 75   // A good balance of size and quality
+      });
+
       const isStuck = currentURL === previousState.url && simplifiedHtml === previousState.html;
       if (isStuck) {
           onLog('⚠️ Agent seems to be stuck. The last action had no effect. Forcing a new action.');
@@ -106,7 +113,8 @@ async function runAutonomousAgent(startUrl, goal, strategy, onLog, agentControl)
 
       let command;
       try {
-        command = await decideNextBrowserAction(goal, strategy, currentURL, simplifiedHtml, previousAction, isStuck, onLog);
+        // +++ UPDATED: Pass the screenshot to the decision-making function +++
+        command = await decideNextBrowserAction(goal, strategy, currentURL, simplifiedHtml, screenshotBase64, previousAction, isStuck, onLog);
       } catch (apiError) {
           onLog(`🧠 API call failed for this step. Will retry on the next loop. Error: ${apiError.message}`);
           continue;
@@ -122,6 +130,7 @@ async function runAutonomousAgent(startUrl, goal, strategy, onLog, agentControl)
         case 'click':
           onLog(`▶️ Action: Clicking selector ${command.selector}`);
           await page.waitForSelector(command.selector, { visible: true });
+          // Using a robust click method
           await page.evaluate(selector => document.querySelector(selector).click(), command.selector);
           break;
         case 'think':
@@ -138,8 +147,7 @@ async function runAutonomousAgent(startUrl, goal, strategy, onLog, agentControl)
           onLog(`✅ Action: Finish. ${command.summary}`);
           onLog(`🎉 Browser will close in 5 seconds.`);
           await new Promise(r => setTimeout(r, 5000));
-          // Don't close browser here; let finally block handle it.
-          return; // Exit the loop and function successfully.
+          return;
         default:
           throw new Error(`Unknown command action: ${command.action}`);
       }
@@ -156,9 +164,8 @@ async function runAutonomousAgent(startUrl, goal, strategy, onLog, agentControl)
             onLog(`Could not take screenshot: ${screenshotError.message}`);
         }
     }
-    throw err; // Re-throw the error to be handled in main.js
+    throw err;
   } finally {
-    // This block ensures the browser is always closed, whether the agent finishes, fails, or is stopped.
     if (browser && browser.isConnected()) {
         await browser.close();
         onLog('🔌 Browser has been closed.');

@@ -4,7 +4,7 @@ const axios = require("axios");
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
-// +++ THIS IS THE CORRECTED FUNCTION +++
+// +++ THIS FUNCTION IS UNCHANGED +++
 async function createPlan(userGoal, onLog = console.log) {
     const maxRetries = 2;
     let lastError = null;
@@ -15,18 +15,15 @@ async function createPlan(userGoal, onLog = console.log) {
             const selfCorrectionPrompt = lastError
                 ? `You failed on the last attempt. The error was: "${lastError}". Please ensure your output is a valid JSON object containing ONLY the keys "targetURL", "taskSummary", and "strategy".`
                 : "";
-            // We now ask for a "strategy" to guide the action agent.
             const systemPrompt = `You are a planning agent. Your job is to take a user's goal and create a plan. You must provide the best starting URL, a clear task summary, and a brief strategy. Your output MUST be a valid JSON object with "targetURL", "taskSummary", and "strategy" keys. ${selfCorrectionPrompt}`;
 
             const response = await axios.post("https://api.openai.com/v1/chat/completions", {
-                // Upgraded to the best model for high-quality planning.
                 model: "gpt-4o-mini",
                 messages: [{ role: "system", content: systemPrompt }, { role: "user", content: `Here is my goal: "${userGoal}". Please create a plan.` }],
                 response_format: { type: "json_object" }
             }, { headers: { "Authorization": `Bearer ${OPENAI_API_KEY}` } });
 
             const plan = JSON.parse(response.data.choices[0].message.content);
-            // Updated validation to include the new 'strategy' key.
             if (!plan.targetURL || typeof plan.targetURL !== 'string' || !plan.taskSummary || typeof plan.taskSummary !== 'string' || !plan.strategy || typeof plan.strategy !== 'string') {
                 throw new Error("Invalid plan schema: The generated JSON is missing or has invalid 'targetURL', 'taskSummary', or 'strategy' keys.");
             }
@@ -40,27 +37,31 @@ async function createPlan(userGoal, onLog = console.log) {
     throw new Error(`AI failed to generate a valid plan after ${maxRetries} attempts. Last error: ${lastError}`);
 }
 
-// +++ THIS IS THE CORRECTED FUNCTION +++
-async function decideNextBrowserAction(goal, strategy, currentURL, simplifiedHtml, previousAction, isStuck, onLog = console.log) {
-    onLog(`🧠 Agent is thinking about the next action...`);
+// +++ THIS IS THE CORRECTED FUNCTION WITH A STRICT LOGIN HANDLER +++
+async function decideNextBrowserAction(goal, strategy, currentURL, simplifiedHtml, screenshotBase64, previousAction, isStuck, onLog = console.log) {
+    onLog(`🧠 Agent is thinking about the next action (with vision)...`);
     try {
-        const systemPrompt = `You are a web agent. You operate in a strict loop. Analyze the state and return a single action JSON.
+        const systemPrompt = `You are a web agent with vision. You follow a strict algorithm to decide your next action.
 
-# ALGORITHM & RULES
-1.  **STUCK CHECK (CRITICAL):** The system has detected you are in a loop (the last action did nothing). You MUST try a DIFFERENT action. Do not repeat the previous action.
-2.  **GOAL COMPLETION CHECK:** Is there text like "Your post was sent" or "Message sent"? If YES, you are DONE. Use the \`finish\` action.
-3.  **STRICT LOGIN CHECK:** Is the page EXPLICITLY a login screen (asking for username/password)? If YES, use the \`wait\` action.
-4.  **CONFUSION HANDLER:** If you are not on a login screen but are unsure what to do next, use the \`think\` action to pause and re-evaluate.
-5.  **ACTION SELECTION:** Based on the goal, strategy, and visible elements, choose the next logical step.
+# AGENT ALGORITHM & RULES (Follow in order)
+1.  **GOAL COMPLETION CHECK:** First, analyze the screenshot. Is the goal already complete? (e.g., text like "Post successful," "Message sent," or "Welcome back!"). If YES, you MUST use the \`finish\` action.
+
+2.  **LOGIN/SIGNUP HANDLER (CRITICAL):** Second, check if the page is a login or signup form.
+    -   If the screenshot shows input fields for "email," "username," or "password," you MUST use the \`wait\` action to pause for the user.
+    -   Your reason for waiting should be "Waiting for user to complete login/signup."
+    -   **DO NOT** attempt to \`type\` in email or password fields. You do not have credentials.
+
+3.  **STUCK CHECK:** If the system reports \`LOOP DETECTED: true\`, your previous action had no effect. You MUST try a DIFFERENT action. Do not repeat the last one.
+
+4.  **ACTION SELECTION:** If none of the above rules apply, analyze the screenshot and the HTML element list to determine the best next step to achieve your goal. Choose from \`click\`, \`type\`, or \`think\`.
 
 # ACTION FORMAT (VALID JSON ONLY)
--   \`{"action": "type", "selector": "[data-agent-id='...']", "text": "..."}\`
+-   \`{"action": "type", "selector": "[data-agent-id='...']", "text": "..."}\` (Use for any input field EXCEPT login/password)
 -   \`{"action": "click", "selector": "[data-agent-id='...']"}\`
--   \`{"action": "think", "thought": "A brief explanation of why you are pausing to think."}\`
--   \`{"action": "wait", "reason": "Waiting for user to complete login form."}\`
+-   \`{"action": "wait", "reason": "Waiting for user to complete login/signup."}\`
+-   \`{"action": "think", "thought": "I am unsure what to do next, I will pause to re-evaluate."}\`
 -   \`{"action": "finish", "summary": "Goal is complete. [Your summary]"}\``;
-        
-        // The user prompt now includes the 'strategy' and the 'isStuck' flag.
+
         const userPrompt = `## CURRENT STATE
 -   **Overall Goal:** "${goal}"
 -   **Your Strategy:** "${strategy}"
@@ -68,17 +69,31 @@ async function decideNextBrowserAction(goal, strategy, currentURL, simplifiedHtm
 -   **Previous Action:** \`${previousAction ? JSON.stringify(previousAction) : "none"}\`
 -   **LOOP DETECTED:** \`${isStuck}\` (If true, you MUST try a different action)
 
-## CURRENT PAGE ELEMENTS
+## CURRENT PAGE INTERACTIVE ELEMENTS
 \`\`\`html
 ${simplifiedHtml}
 \`\`\`
 
-Based on your algorithm, what is the single next action JSON?`;
+Based on your analysis of the screenshot and the strict algorithm, what is the single next action JSON?`;
 
         const response = await axios.post("https://api.openai.com/v1/chat/completions", {
-            // Upgraded to the best small model for speed and capability.
-            model: "gpt-4o-mini", 
-            messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userPrompt }],
+            model: "gpt-4o-mini",
+            messages: [
+                { role: "system", content: systemPrompt },
+                {
+                    role: "user",
+                    content: [
+                        { type: "text", text: userPrompt },
+                        {
+                            type: "image_url",
+                            image_url: {
+                                url: `data:image/jpeg;base64,${screenshotBase64}`,
+                                detail: "low"
+                            }
+                        }
+                    ]
+                }
+            ],
             response_format: { type: "json_object" }
         }, { headers: { "Authorization": `Bearer ${OPENAI_API_KEY}` } });
 
@@ -89,5 +104,6 @@ Based on your algorithm, what is the single next action JSON?`;
         throw error;
     }
 }
+
 
 module.exports = { createPlan, decideNextBrowserAction };
