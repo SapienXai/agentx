@@ -2,14 +2,12 @@
 
 // --- STATE ---
 let currentPlan = null;
-// Load task history from localStorage if available
 let taskHistory = [];
 
 // --- SCREEN SELECTORS ---
 const screens = document.querySelectorAll('.screen');
 
 // --- AGENT SCREEN ELEMENTS ---
-// ... (no changes here) ...
 const goalInput = document.getElementById('goal-input');
 const planButton = document.getElementById('plan-button');
 const planConfirmationView = document.getElementById('plan-confirmation');
@@ -27,7 +25,7 @@ const stopButton = document.getElementById('stop-button');
 const historyList = document.getElementById('history-list');
 const noHistoryMessage = document.getElementById('no-history-message');
 
-// +++ NEW: CONNECT SCREEN ELEMENTS +++
+// --- CONNECT SCREEN ELEMENTS ---
 const qrCodeImage = document.getElementById('qr-code-image');
 const qrSpinner = document.getElementById('qr-spinner');
 const connectUrl = document.getElementById('connect-url');
@@ -55,15 +53,13 @@ const logMessage = (message) => {
     statusLog.scrollTop = statusLog.scrollHeight;
 };
 
-// ... (renderHistory function is unchanged) ...
+// +++ THIS FUNCTION IS REWRITTEN FOR BENTO GRID & MICRO-MOTION +++
 const renderHistory = () => {
-    // Persist history to localStorage
     localStorage.setItem('taskHistory', JSON.stringify(taskHistory));
 
     if (taskHistory.length === 0) {
         noHistoryMessage.classList.remove('d-none');
         historyList.innerHTML = '';
-        historyList.appendChild(noHistoryMessage);
         return;
     }
     noHistoryMessage.classList.add('d-none');
@@ -71,34 +67,54 @@ const renderHistory = () => {
 
     taskHistory.slice().reverse().forEach(task => {
         let badgeClass = '';
+        let icon = '';
         switch(task.status) {
-            case 'Running': badgeClass = 'bg-primary'; break;
-            case 'Completed': badgeClass = 'bg-success'; break;
-            case 'Failed': badgeClass = 'bg-danger'; break;
-            case 'Stopped': badgeClass = 'bg-warning text-dark'; break;
+            case 'Running': badgeClass = 'bg-primary'; icon = '<i class="bi bi-arrow-repeat"></i>'; break;
+            case 'Completed': badgeClass = 'bg-success'; icon = '<i class="bi bi-check-circle-fill"></i>'; break;
+            case 'Failed': badgeClass = 'bg-danger'; icon = '<i class="bi bi-x-octagon-fill"></i>'; break;
+            case 'Stopped': badgeClass = 'bg-warning text-dark'; icon = '<i class="bi bi-stop-circle-fill"></i>'; break;
         }
+        
         const taskItem = document.createElement('div');
-        taskItem.className = 'list-group-item d-flex justify-content-between align-items-start';
+        // Add classes for bento tile and pop-in animation
+        taskItem.className = 'history-tile animate-pop-in';
+        
+        // Add glow animation for completed tasks
+        if (task.status === 'Completed') {
+            taskItem.classList.add('completed-glow');
+        }
+
         taskItem.innerHTML = `
-            <div class="ms-2 me-auto">
-                <div class="fw-bold">${task.summary}</div>
-                <small class="text-muted">${new Date(task.startTime).toLocaleString()}</small>
+            <div class="d-flex justify-content-between align-items-start">
+                <div class="me-auto">
+                    <div class="fw-bold">${task.summary}</div>
+                    <small class="text-muted">${new Date(task.startTime).toLocaleString()}</small>
+                </div>
+                <span class="badge rounded-pill ${badgeClass} fs-6 p-2">${icon}</span>
             </div>
-            <span class="badge rounded-pill ${badgeClass}">${task.status}</span>
         `;
         historyList.appendChild(taskItem);
     });
 };
 
-
-// --- NAVIGATION LOGIC (Updated) ---
+// --- NAVIGATION LOGIC ---
 const showScreen = (screenId) => {
-    screens.forEach(screen => screen.classList.add('d-none'));
-    document.getElementById(screenId).classList.remove('d-none');
+    screens.forEach(screen => {
+        // We check for d-none to avoid removing it from a screen that is already hidden
+        if (!screen.classList.contains('d-none')) {
+            screen.classList.add('d-none');
+        }
+    });
+
+    const activeScreen = document.getElementById(screenId);
+    if (activeScreen) {
+        activeScreen.classList.remove('d-none');
+    }
+
     navLinks.forEach(link => {
         link.classList.toggle('active', link.dataset.screen === screenId);
     });
-    // +++ NEW: Fetch QR code when connect screen is shown +++
+    
     if (screenId === 'connect-screen') {
         fetchQrCode();
     }
@@ -111,10 +127,9 @@ navLinks.forEach(link => {
     });
 });
 
-// +++ THIS IS THE NEW FUNCTION +++
 let qrCodeFetched = false;
 const fetchQrCode = async () => {
-    if (qrCodeFetched) return; // Only fetch once
+    if (qrCodeFetched) return;
 
     qrSpinner.classList.remove('d-none');
     qrCodeImage.classList.add('d-none');
@@ -138,9 +153,7 @@ const fetchQrCode = async () => {
     }
 };
 
-
-// --- EVENT LISTENERS (No changes from here on) ---
-// ... (planButton, confirmButton, cancelButton, stopButton listeners are unchanged) ...
+// --- EVENT LISTENERS ---
 planButton.addEventListener('click', async () => {
     const goal = goalInput.value.trim();
     if (!goal) return alert('Please enter a goal first.');
@@ -230,10 +243,41 @@ stopButton.addEventListener('click', async () => {
     await fetch('/api/stop-agent', { method: 'POST' });
 });
 
+// +++ NEW: COMMAND PALETTE SHORTCUTS +++
+document.addEventListener('keydown', (e) => {
+    if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') {
+        return; // Don't trigger shortcuts while typing
+    }
+
+    if (e.metaKey || e.ctrlKey) { // Meta for Mac, Ctrl for Win/Linux
+        switch(e.key) {
+            case '1':
+                e.preventDefault();
+                showScreen('home-screen');
+                break;
+            case '2':
+                e.preventDefault();
+                showScreen('agent-screen');
+                break;
+            case '3':
+                e.preventDefault();
+                showScreen('history-screen');
+                break;
+            case '4':
+                e.preventDefault();
+                showScreen('connect-screen');
+                break;
+            case 'k': // A simple "help" shortcut
+                e.preventDefault();
+                alert('App Shortcuts:\n\n⌘/Ctrl + 1: Home\n⌘/Ctrl + 2: Agent\n⌘/Ctrl + 3: History\n⌘/Ctrl + 4: Connect');
+                break;
+        }
+    }
+});
+
 
 // --- INITIALIZATION ---
 document.addEventListener('DOMContentLoaded', () => {
-    // Load any previously stored history
     const stored = localStorage.getItem('taskHistory');
     if (stored) {
         try {

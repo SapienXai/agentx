@@ -1,16 +1,21 @@
 /* style.css (Enhanced) */
 
 :root {
-    --navbar-height: 80px; /* Standard height for the bottom navbar */
+    --navbar-height: 80px;
+    --spring-transition: cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-/* --- Base Layout --- */
+/* --- Base Layout & Background --- */
 html, body {
     height: 100%;
     margin: 0;
     padding: 0;
-    overflow: hidden; /* Prevent body scroll, content scrolls instead */
-    background-color: #f0f2f5;
+    overflow: hidden;
+    color: #f0f0f0; /* Lighter text for dark background */
+    background-color: #1a1a1d;
+    background-image: linear-gradient(135deg, #434371 0%, #232526 74%);
+    background-attachment: fixed;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 }
 
 body {
@@ -20,76 +25,161 @@ body {
 
 /* --- Main Content Area --- */
 .content-wrapper {
-    flex: 1; /* Takes up all available space */
-    overflow-y: auto; /* Allows content to scroll */
-    padding-bottom: var(--navbar-height); /* Prevent content from hiding behind navbar */
+    flex: 1;
+    overflow-y: auto;
+    padding-bottom: var(--navbar-height);
 }
 
 .screen {
     width: 100%;
-    height: 90%;
+    min-height: 100%;
     display: flex;
     flex-direction: column;
     justify-content: center;
+    opacity: 0;
+    animation: fadeIn 0.5s forwards;
+}
+
+@keyframes fadeIn {
+    to { opacity: 1; }
 }
 
 /* --- Logo Styling --- */
 .logo {
     display: block;
     height: auto;
-    width: 200px;
-    margin: 0 auto 0rem;
+    width: 150px; /* Slightly smaller logo */
+    margin: 0 auto 1.5rem;
+    filter: drop-shadow(0 4px 8px rgba(0,0,0,0.4));
 }
 
-/* --- Component Specific Styles --- */
-.card-header h5 {
-    margin-bottom: 0;
+/* --- Glassmorphism Components (Cards & Navbar) --- */
+.card, .navbar {
+    background: rgba(30, 30, 40, 0.55);
+    border-radius: 16px;
+    box-shadow: 0 4px 30px rgba(0, 0, 0, 0.2);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.15);
 }
 
-.card code {
-    background-color: #e9ecef;
-    padding: 0.2em 0.4em;
-    border-radius: 3px;
-    font-family: "SF Mono", "Fira Code", "Consolas", monospace;
+.card-title, .card-header h5 {
+    color: #ffffff;
+}
+.card-text, .card-body p, .card-body span {
+    color: #d1d1d1;
+}
+
+.card-header {
+    background-color: rgba(255, 255, 255, 0.05);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 /* Status Log Styling */
 pre#status-log {
-    background-color: #282c34;
+    background-color: rgba(0, 0, 0, 0.4);
     color: #abb2bf;
     padding: 1rem;
     border-radius: 8px;
     white-space: pre-wrap;
     word-wrap: break-word;
-    height: 40vh; /* Fixed height for the log area */
+    height: 40vh;
     overflow-y: auto;
     font-family: "SF Mono", "Fira Code", "Consolas", monospace;
     font-size: 0.9rem;
+    border: 1px solid rgba(255, 255, 255, 0.1);
 }
+
+/* --- Bento Grid for History --- */
+#history-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 1.2rem;
+    padding: 1rem;
+}
+
+.history-tile {
+    background: rgba(40, 40, 55, 0.6);
+    padding: 1rem;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+    overflow: hidden; /* For glow effect */
+    position: relative;
+}
+
+.history-tile:hover {
+    transform: translateY(-5px) scale(1.02);
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
+}
+
+.history-tile .fw-bold { color: #fff; }
+.history-tile small { color: #aaa; }
+
+/* --- Micro-Motion Animations --- */
+@keyframes pop-in {
+    from { transform: scale(0.8); opacity: 0; }
+    to { transform: scale(1); opacity: 1; }
+}
+
+.animate-pop-in {
+    animation: pop-in 0.4s var(--spring-transition) forwards;
+}
+
+@keyframes glow-sweep {
+    from { transform: translateX(-100%); }
+    to { transform: translateX(100%); }
+}
+
+.completed-glow::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 50%;
+    height: 100%;
+    background: linear-gradient(to right, transparent, rgba(118, 255, 3, 0.2), transparent);
+    animation: glow-sweep 1.5s ease-in-out;
+}
+
 
 /* --- Navbar Styling --- */
 .navbar {
     height: var(--navbar-height);
-    box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.2);
+    border-top: 1px solid rgba(255, 255, 255, 0.15);
 }
 
 .nav-link {
-    color: #6c757d;
-    transition: color 0.2s;
-    /* +++ THIS IS THE FIX: The explicit width property has been removed +++ */
-    /* It now lets flexbox handle the spacing for all 4 items automatically. */
+    color: #a0a0b0;
+    transition: color 0.2s, transform 0.2s;
 }
 
 .nav-link.active {
-    color: #007bff;
-    font-weight: bold;
+    color: #ffffff;
+    font-weight: 600;
+    transform: scale(1.1);
+}
+.nav-link.active .bi {
+    color: #7bffff;
 }
 
 .nav-link:hover {
-    color: #0056b3;
+    color: #ffffff;
 }
 
-/* --- Utility --- */
-.d-none {
-    display: none !important;
+/* --- Utility & Form --- */
+.form-control, .btn {
+    border-radius: 8px;
 }
+textarea#goal-input {
+    background-color: rgba(0,0,0,0.2);
+    border: 1px solid rgba(255,255,255,0.2);
+    color: #fff;
+}
+textarea#goal-input::placeholder {
+    color: #888;
+}
+
+.d-none { display: none !important; }
