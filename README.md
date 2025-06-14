@@ -13,7 +13,8 @@
   <a href="#how-it-works">How It Works</a> •
   <a href="#tech-stack">Tech Stack</a> •
   <a href="#getting-started">Getting Started</a> •
-  <a href="#usage-guide">Usage Guide</a>
+  <a href="#usage-guide">Usage Guide</a> •
+  <a href="#running-tests">Running Tests</a>
 </p>
 
 ---
@@ -136,6 +137,19 @@ This tab shows a list of all tasks you have run, along with their status: `Compl
 -   This will open the web interface in your phone's browser, giving you full control.
 -   If you need the code manually, visit `http://<your-ip>:PORT/api/qr-code`.
 -   **Note:** Your phone must be connected to the same Wi-Fi network as your computer.
+
+## Running Tests
+
+To execute the automated tests run:
+
+```bash
+npm test
+```
+
+This command runs the Jest test suite which includes:
+
+- **`agent_api.test.js`** – verifies the `createPlan` function that calls the OpenAI API.
+- **`renderer.test.js`** – checks the progress parsing logic used by the renderer.
 
 ## Future Improvements
 
