@@ -81,7 +81,7 @@ async function runAutonomousAgent(startUrl, taskSummary, strategy, onLog, agentC
     page = (await browser.pages())[0] || await browser.newPage();
 
     onLog('⚡️ Enabling network interception...');
-    await page.setRequestInterception(true);
+    await page.setRequestInterception(false);
     page.on('request', (req) => {
       const blockList = ['image', 'stylesheet', 'font', 'media', 'csp_report'];
       if (blockList.includes(req.resourceType())) req.abort();
