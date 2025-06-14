@@ -4,18 +4,26 @@ const axios = require("axios");
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
-// +++ This function is unchanged but included for completeness +++
+// +++ THIS FUNCTION IS MODIFIED TO SEARCH FOR A BRAND/KEYWORD LIKE A HUMAN +++
 async function createPlan(userGoal, onLog = console.log) {
     const maxRetries = 2;
     let lastError = null;
 
     for (let i = 0; i < maxRetries; i++) {
-        onLog(`🧠 Attempt ${i + 1}/${maxRetries}: Asking GPT to create a plan for: "${userGoal}"...`);
+        onLog(`🧠 Attempt ${i + 1}/${maxRetries}: Identifying primary search keyword for: "${userGoal}"...`);
         try {
             const selfCorrectionPrompt = lastError
-                ? `You failed on the last attempt. The error was: "${lastError}". Please ensure your output is a valid JSON object containing ONLY the keys "targetURL", "taskSummary", and "strategy".`
+                ? `You failed on the last attempt. The error was: "${lastError}". Please ensure your output is a valid JSON object containing ONLY the keys "searchTerm", "taskSummary", and "strategy".`
                 : "";
-            const systemPrompt = `You are a planning agent. Your job is to take a user's goal and create a plan. You must provide the best starting URL, a clear task summary, and a brief strategy. Your output MUST be a valid JSON object with "targetURL", "taskSummary", and "strategy" keys. ${selfCorrectionPrompt}`;
+            const systemPrompt = `You are a planning agent that mimics human behavior. Your first step is to identify the main website or brand to search for.
+Given a user's goal, extract the single most relevant search keyword. This is usually a brand name, company, or website.
+
+# EXAMPLES:
+- User Goal: "Post a tweet about our new product." -> searchTerm: "Twitter"
+- User Goal: "Find the latest news on BBC." -> searchTerm: "BBC News"
+- User Goal: "Order a book from Amazon." -> searchTerm: "Amazon"
+
+Your output MUST be a valid JSON object with "searchTerm", "taskSummary", and "strategy" keys. The 'strategy' should briefly describe how to identify the correct link from the search results and the next step. ${selfCorrectionPrompt}`;
 
             const response = await axios.post("https://api.openai.com/v1/chat/completions", {
                 model: "gpt-4o-mini",
@@ -24,9 +32,15 @@ async function createPlan(userGoal, onLog = console.log) {
             }, { headers: { "Authorization": `Bearer ${OPENAI_API_KEY}` } });
 
             const plan = JSON.parse(response.data.choices[0].message.content);
-            if (!plan.targetURL || typeof plan.targetURL !== 'string' || !plan.taskSummary || typeof plan.taskSummary !== 'string' || !plan.strategy || typeof plan.strategy !== 'string') {
-                throw new Error("Invalid plan schema: The generated JSON is missing or has invalid 'targetURL', 'taskSummary', or 'strategy' keys.");
+            // Validate the new schema with 'searchTerm'
+            if (!plan.searchTerm || typeof plan.searchTerm !== 'string' || !plan.taskSummary || typeof plan.taskSummary !== 'string' || !plan.strategy || typeof plan.strategy !== 'string') {
+                throw new Error("Invalid plan schema: The generated JSON is missing or has invalid 'searchTerm', 'taskSummary', or 'strategy' keys.");
             }
+            
+            // The executor will navigate to a search engine with the generated keyword.
+            // This simulates a user typing into the browser's search bar.
+            plan.targetURL = `https://www.google.com/search?q=${encodeURIComponent(plan.searchTerm)}`;
+            
             return plan;
         } catch (error) {
             lastError = error.message;
@@ -37,7 +51,7 @@ async function createPlan(userGoal, onLog = console.log) {
     throw new Error(`AI failed to generate a valid plan after ${maxRetries} attempts. Last error: ${lastError}`);
 }
 
-// +++ THIS IS THE CORRECTED FUNCTION WITH RE-PLANNING CAPABILITIES +++
+// +++ This function is unchanged but is perfectly suited to handle the search results page +++
 async function decideNextBrowserAction(goal, strategy, currentURL, simplifiedHtml, screenshotBase64, previousAction, isStuck, actionHistory = [], onLog = console.log) {
     onLog(`🧠 Agent is thinking about the next action (with vision & memory)...`);
     try {

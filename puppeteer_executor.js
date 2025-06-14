@@ -5,7 +5,7 @@ const path = require('path');
 const puppeteer = require('puppeteer');
 
 const DEFAULT_CHROME_PATHS = {
-  win32: 'C\\\Program Files\\\Google\\\Chrome\\\Application\\\chrome.exe',
+  win32: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
   darwin: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
   linux: '/usr/bin/google-chrome'
 };
@@ -81,11 +81,16 @@ async function runAutonomousAgent(startUrl, taskSummary, strategy, onLog, agentC
     page = (await browser.pages())[0] || await browser.newPage();
 
     onLog('⚡️ Enabling network interception...');
-    await page.setRequestInterception(false);
+    // <<< FIX: This must be set to 'true' to enable request blocking.
+    await page.setRequestInterception(true);
+    
     page.on('request', (req) => {
       const blockList = ['image', 'stylesheet', 'font', 'media', 'csp_report'];
-      if (blockList.includes(req.resourceType())) req.abort();
-      else req.continue();
+      if (blockList.includes(req.resourceType())) {
+        req.abort();
+      } else {
+        req.continue();
+      }
     });
 
     onLog(`▶️ Session loaded automatically.`);
@@ -156,15 +161,16 @@ async function runAutonomousAgent(startUrl, taskSummary, strategy, onLog, agentC
 
         case 'type':
           onLog(`▶️ Action: Typing "${command.text}" into ${command.selector}`);
-          await page.waitForSelector(command.selector, { visible: true });
-          await page.type(command.selector, command.text, { delay: 100 });
+          await page.waitForSelector(`[data-agent-id="${command.selector}"]`, { visible: true });
+          await page.type(`[data-agent-id="${command.selector}"]`, command.text, { delay: 100 });
           break;
 
         case 'click':
+          const selector = `[data-agent-id="${command.selector}"]`;
           if (command.selector) {
-            onLog(`▶️ Action: Clicking selector ${command.selector}`);
-            await page.waitForSelector(command.selector, { visible: true });
-            await page.evaluate(selector => document.querySelector(selector).click(), command.selector);
+            onLog(`▶️ Action: Clicking selector ${selector}`);
+            await page.waitForSelector(selector, { visible: true });
+            await page.evaluate(sel => document.querySelector(sel).click(), selector);
           } else if (command.x !== undefined && command.y !== undefined) {
             onLog(`▶️ Action: Clicking coordinates (X:${command.x}, Y:${command.y})`);
             if (command.reason) onLog(`   Reason: ${command.reason}`);
