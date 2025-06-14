@@ -144,6 +144,16 @@ This tab shows a list of all tasks you have run, along with their status: `Compl
 -   [ ] **More Complex Actions**: Add data extraction and summarization capabilities.
 -   [ ] **Security**: Add an optional password protection layer for the web interface.
 
+## Running Tests
+
+To verify that everything is working as expected you can run the Jest test suite:
+
+```bash
+npm test
+```
+
+This command runs all `.test.js` files using Jest. The current tests cover the plan creation logic in `agent_api.js` and the progress parsing helper in `progress.js`.
+
 ## Contributing
 
 Contributions are welcome! If you have an idea for a new feature or have found a bug, please open an issue or submit a pull request.
