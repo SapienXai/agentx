@@ -14,7 +14,7 @@ const http = require('http');
 const express = require('express');
 const { WebSocketServer } = require('ws');
 const os = require('os');
-const qrcode = require('qrcode'); // +++ NEW
+const qrcode = require('qrcode');
 const { createPlan } = require('./agent_api.js');
 const { runAutonomousAgent } = require('./puppeteer_executor.js');
 
@@ -48,7 +48,7 @@ function createWindow() {
     wss.on('connection', (ws) => {
         clients.add(ws);
         ws.on('close', () => clients.delete(ws));
-        log(`📢 New client connected. Total clients: ${clients.size}`);
+        console.log(`📢 New client connected. Total clients: ${clients.size}`);
     });
 
     function broadcast(message) {
@@ -63,14 +63,10 @@ function createWindow() {
 
     // --- API ENDPOINTS ---
     
-    // +++ QR code endpoint +++
     expressApp.get('/api/qr-code', async (req, res) => {
         try {
             const qrCodeDataUrl = await qrcode.toDataURL(serverUrl, {
-                errorCorrectionLevel: 'H',
-                type: 'image/png',
-                margin: 2,
-                width: 256
+                errorCorrectionLevel: 'H', type: 'image/png', margin: 2, width: 256
             });
             res.json({ success: true, qrCode: qrCodeDataUrl, url: serverUrl });
         } catch (err) {
@@ -81,35 +77,41 @@ function createWindow() {
 
     expressApp.post('/api/get-plan', async (req, res) => {
         try {
-            log('🤖 Agent is thinking about a plan...');
-            const plan = await createPlan(req.body.goal, log);
-            log('✅ Plan received. Please review and confirm.');
+            const genericLogger = (message) => console.log(message); // Use console for planning phase
+            genericLogger('🤖 Agent is thinking about a plan...');
+            const plan = await createPlan(req.body.goal, genericLogger);
+            genericLogger('✅ Plan received. Please review and confirm.');
             res.json({ success: true, plan: plan });
         } catch (error) {
-            log(`🚨 FAILED TO CREATE PLAN: ${error.message}`);
+            console.error(`🚨 FAILED TO CREATE PLAN: ${error.message}`);
             res.status(500).json({ success: false, error: error.message });
         }
     });
 
+    // +++ FIX: Added 'async' keyword to the function definition +++
     expressApp.post('/api/run-task', async (req, res) => {
         agentControl.stop = false;
+        const { plan, taskId } = req.body;
+        const taskLogger = (message) => broadcast(`${taskId}::${message}`);
+
         try {
-            const plan = req.body.plan;
-            log(`▶️ Handing off to Autonomous Agent to execute goal: "${plan.taskSummary}"`);
-            await runAutonomousAgent(plan.targetURL, plan.taskSummary, plan.strategy, log, agentControl);
+            taskLogger(`▶️ Handing off to Autonomous Agent to execute goal: "${plan.taskSummary}"`);
+            await runAutonomousAgent(plan.targetURL, plan.taskSummary, plan.strategy, taskLogger, agentControl);
             if (agentControl.stop) throw new Error("Agent stopped by user.");
-            log('✅ Agent finished successfully!');
+            taskLogger('✅ Agent finished successfully!');
             res.json({ success: true });
         } catch (error) {
             const isUserStop = error.message.includes("Agent stopped by user");
-            if (isUserStop) log('⏹️ Agent execution has been stopped by the user.');
-            log(`🚨 FINAL ERROR: ${error.message}`);
+            if (isUserStop) {
+                taskLogger('⏹️ Agent execution has been stopped by the user.');
+            }
+            taskLogger(`🚨 FINAL ERROR: ${error.message}`);
             res.status(500).json({ success: false, error: error.message, isUserStop });
         }
     });
 
     expressApp.post('/api/stop-agent', async (req, res) => {
-        log('🔴 Stop signal received. Halting agent...');
+        console.log('🔴 Stop signal received. Halting agent...');
         if (!agentControl.stop) agentControl.stop = true;
         res.json({ success: true });
     });
@@ -118,8 +120,8 @@ function createWindow() {
         console.log(`Server is running at ${serverUrl}`);
         
         const win = new BrowserWindow({
-            width: 800,
-            height: 700,
+            width: 600,  // Adjusted width for the new UI
+            height: 800, // Adjusted height
             webPreferences: {
                 preload: path.join(__dirname, 'preload.js'),
             },
@@ -128,8 +130,7 @@ function createWindow() {
         win.loadURL(`http://localhost:${PORT}`);
         
         win.webContents.once('dom-ready', () => {
-             log('--- Welcome to BrowserX Agent ---');
-             log(`🚀 Access this app from another device by scanning the QR code in the 'Connect' tab.`);
+             console.log('--- Welcome to BrowserX Agent ---');
         });
     });
 }
