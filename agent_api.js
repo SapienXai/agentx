@@ -4,7 +4,7 @@ const axios = require("axios");
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
-// +++ THIS FUNCTION IS MODIFIED TO SEARCH FOR A BRAND/KEYWORD LIKE A HUMAN +++
+// ... (createPlan function remains unchanged) ...
 async function createPlan(userGoal, onLog = console.log) {
     const maxRetries = 2;
     let lastError = null;
@@ -13,17 +13,33 @@ async function createPlan(userGoal, onLog = console.log) {
         onLog(`🧠 Attempt ${i + 1}/${maxRetries}: Identifying primary search keyword for: "${userGoal}"...`);
         try {
             const selfCorrectionPrompt = lastError
-                ? `You failed on the last attempt. The error was: "${lastError}". Please ensure your output is a valid JSON object containing ONLY the keys "searchTerm", "taskSummary", and "strategy".`
+                ? `You failed on the last attempt. The error was: "${lastError}". Please review the instructions and ensure your output is a single, valid JSON object with the required keys.`
                 : "";
-            const systemPrompt = `You are a planning agent that mimics human behavior. Your first step is to identify the main website or brand to search for.
-Given a user's goal, extract the single most relevant search keyword. This is usually a brand name, company, or website.
+            
+            const systemPrompt = `You are a planning agent. Your task is to analyze a user's goal and generate a plan in a specific JSON format.
 
-# EXAMPLES:
-- User Goal: "Post a tweet about our new product." -> searchTerm: "Twitter"
-- User Goal: "Find the latest news on BBC." -> searchTerm: "BBC News"
-- User Goal: "Order a book from Amazon." -> searchTerm: "Amazon"
+# CORE TASK
+1.  Identify the main website, brand, or company to search for.
+2.  Summarize the user's ultimate goal.
+3.  Outline a brief strategy to start the task.
 
-Your output MUST be a valid JSON object with "searchTerm", "taskSummary", and "strategy" keys. The 'strategy' should briefly describe how to identify the correct link from the search results and the next step. ${selfCorrectionPrompt}`;
+# RESPONSE FORMAT
+Your output MUST be a single, valid JSON object. Do not include any text before or after the JSON.
+The JSON object must contain these exact keys: "searchTerm", "taskSummary", and "strategy".
+
+# JSON STRUCTURE EXAMPLE:
+{
+  "searchTerm": "Twitter",
+  "taskSummary": "Post a tweet about a new product",
+  "strategy": "Search for the main website, find the login button, and then proceed to the compose tweet page."
+}
+
+# EXAMPLES OF LOGIC:
+- User Goal: "Post a tweet about our new product." -> "searchTerm": "Twitter"
+- User Goal: "Find the latest news on BBC." -> "searchTerm": "BBC News"
+- User Goal: "Order a book from Amazon." -> "searchTerm": "Amazon"
+
+${selfCorrectionPrompt}`;
 
             const response = await axios.post("https://api.openai.com/v1/chat/completions", {
                 model: "gpt-4o-mini",
@@ -32,13 +48,10 @@ Your output MUST be a valid JSON object with "searchTerm", "taskSummary", and "s
             }, { headers: { "Authorization": `Bearer ${OPENAI_API_KEY}` } });
 
             const plan = JSON.parse(response.data.choices[0].message.content);
-            // Validate the new schema with 'searchTerm'
             if (!plan.searchTerm || typeof plan.searchTerm !== 'string' || !plan.taskSummary || typeof plan.taskSummary !== 'string' || !plan.strategy || typeof plan.strategy !== 'string') {
                 throw new Error("Invalid plan schema: The generated JSON is missing or has invalid 'searchTerm', 'taskSummary', or 'strategy' keys.");
             }
             
-            // The executor will navigate to a search engine with the generated keyword.
-            // This simulates a user typing into the browser's search bar.
             plan.targetURL = `https://www.google.com/search?q=${encodeURIComponent(plan.searchTerm)}`;
             
             return plan;
@@ -51,27 +64,33 @@ Your output MUST be a valid JSON object with "searchTerm", "taskSummary", and "s
     throw new Error(`AI failed to generate a valid plan after ${maxRetries} attempts. Last error: ${lastError}`);
 }
 
-// +++ This function is unchanged but is perfectly suited to handle the search results page +++
+
+// +++ THIS FUNCTION IS CORRECTED TO HANDLE WAITING AND STOPPABLE STATES +++
 async function decideNextBrowserAction(goal, strategy, currentURL, simplifiedHtml, screenshotBase64, previousAction, isStuck, actionHistory = [], onLog = console.log) {
     onLog(`🧠 Agent is thinking about the next action (with vision & memory)...`);
     try {
+        // +++ FIX: Added a new "Element-Action Guide" to help the AI choose the correct action for an element type. +++
         const systemPrompt = `You are an expert web agent. Your primary tool is vision. You analyze a screenshot and a simplified list of HTML elements to decide the next action.
 
 # CORE LOGIC (Follow in Order):
 1.  **GOAL COMPLETION CHECK:** Analyze the screenshot for signs of success (e.g., "Post successful," "Message sent"). If complete, you MUST use \`finish\`.
-2.  **RE-PLANNING CHECK (CRITICAL):** Is the page an error (e.g., 404 Not Found), or is the initial strategy clearly impossible from the current page? For example, if your strategy is "Click the blog post button" but you are on a login page. If so, you MUST use the \`replan\` action to ask for a new strategy.
-3.  **LOGIN/SIGNUP HANDLER:** If you see a login/signup form, you MUST use \`wait\`. Do not try to type credentials.
-4.  **ACTION SELECTION:** Based on the visual evidence, choose the next logical action.
-    -   If an element is in the HTML list, prefer clicking it with a \`selector\`.
-    -   If an element is visible but NOT in the HTML list, you MUST use coordinates \`x\` and \`y\` as a fallback.
+2.  **RE-PLANNING CHECK:** Is the page an error (e.g., 404), or is the strategy impossible from here? If so, you MUST use \`replan\`.
+3.  **MANUAL INTERVENTION HANDLER:** Is the agent blocked by a login/signup form or a CAPTCHA that it cannot solve? If so, you MUST use \`wait\` to pause for the user.
+4.  **PAGE LOAD / UNCERTAINTY HANDLER:** If the page seems to be loading, an element isn't visible yet, or you are simply unsure, you MUST use \`think\`. This allows the agent to re-evaluate in the next step without stopping. Do NOT use \`wait\` for this.
+5.  **ACTION SELECTION:** Based on visual evidence and the element type, choose the next logical action.
+
+# ELEMENT-ACTION GUIDE
+-   **Use \`type\` for:** \`<input>\`, \`<textarea>\` (or elements with \`role="textbox"\`). You cannot \`click\` these.
+-   **Use \`click\` for:** \`<button>\`, \`<a>\`, \`<div>\` (or elements with \`role="button"\`, \`role="link"\`, etc.).
 
 # ACTION FORMAT (VALID JSON ONLY)
--   \`{"action": "replan", "reason": "A brief but clear explanation of why the old plan failed."}\`
--   \`{"action": "click", "selector": "[data-agent-id='...']"}\` (Primary Method)
--   \`{"action": "click", "x": <number>, "y": <number>, "reason": "Clicked on element not in HTML list."}\` (Fallback Method)
--   \`{"action": "type", "selector": "[data-agent-id='...']", "text": "..."}\`
--   \`{"action": "wait", "reason": "Waiting for user to complete login/signup."}\`
--   \`{"action": "think", "thought": "Briefly explain your reasoning if you are unsure."}\`
+**IMPORTANT**: For "click" and "type", the "selector" value MUST be the string from the \`data-agent-id\` attribute ONLY.
+-   \`{"action": "replan", "reason": "Explain why the old plan failed."}\`
+-   \`{"action": "click", "selector": "the-actual-id-from-the-html-list"}\`
+-   \`{"action": "click", "x": <number>, "y": <number>, "reason": "Clicked element not in HTML."}\`
+-   \`{"action": "type", "selector": "the-id-of-the-input-element", "text": "..."}\`
+-   \`{"action": "wait", "reason": "Waiting for user to solve login/signup or CAPTCHA."}\` (Use this sparingly!)
+-   \`{"action": "think", "thought": "The page is loading, I will wait and re-evaluate."}\` (Use this if you are not sure or the page isn't ready)
 -   \`{"action": "finish", "summary": "Goal is complete. [Your summary]"}\``;
 
         let historyLog = "No history yet.";
@@ -93,7 +112,7 @@ ${historyLog}
 ${simplifiedHtml}
 \`\`\`
 
-**Your Task:** Analyze the screenshot. Based on your core logic, decide the single next JSON action. If the current strategy is failing, use 'replan'.`;
+**Your Task:** Analyze the screenshot. Based on your core logic and the element-action guide, decide the single next JSON action. If the page is still loading or you are unsure, use 'think'.`;
 
         const response = await axios.post("https://api.openai.com/v1/chat/completions", {
             model: "gpt-4o-mini",

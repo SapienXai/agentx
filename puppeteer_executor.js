@@ -4,48 +4,77 @@ const fs = require('fs');
 const path = require('path');
 const puppeteer = require('puppeteer');
 
+// ... (constants and helper functions like sanitizeSelectorId, randomDelay remain the same) ...
 const DEFAULT_CHROME_PATHS = {
   win32: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
   darwin: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
   linux: '/usr/bin/google-chrome'
 };
-
 const CHROME_PATH = process.env.CHROME_PATH || DEFAULT_CHROME_PATHS[process.platform] || '/usr/bin/google-chrome';
-const { createPlan, decideNextBrowserAction } = require('./agent_api.js'); // Import createPlan here
-
+const { createPlan, decideNextBrowserAction } = require('./agent_api.js'); 
 const USER_DATA_DIR = path.join(__dirname, 'chrome_session_data');
 const MAX_AGENT_STEPS = 15;
 const MAX_ACTION_HISTORY = 4;
+const randomDelay = (min = 1000, max = 3000) => new Promise(r => setTimeout(r, Math.floor(Math.random() * (max - min + 1)) + min));
+function sanitizeSelectorId(selectorId) {
+  if (!selectorId || typeof selectorId !== 'string') return selectorId;
+  const match = selectorId.match(/\[data-agent-id=(?:'|")(.*?)(?:'|")\]/);
+  return match ? match[1] : selectorId;
+}
 
-// This function simplifies the page's HTML to only include interactive elements...
-// ... (simplifyHtml function is unchanged but included for completeness) ...
+// +++ FIX: The simplifyHtml function is heavily upgraded for reliability. +++
 async function simplifyHtml(page) {
     return await page.evaluate(() => {
+        // This function now prioritizes stable, developer-provided attributes over volatile ones.
         const generateStableId = (el) => {
-            const text = (el.innerText || el.ariaLabel || el.placeholder || '').trim();
-            let sanitizedText = text.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '-').substring(0, 50);
-            if (!sanitizedText) {
-                sanitizedText = el.id || el.name || el.className.split(' ')[0] || 'no-text';
-            }
-            return `${el.tagName.toLowerCase()}-${sanitizedText}`;
+            const sanitize = (str) => str.replace(/[^a-zA-Z0-9\s-]/g, '').replace(/\s+/g, '-').substring(0, 50);
+
+            // Priority order for creating a stable ID
+            const testId = el.getAttribute('data-testid');
+            if (testId) return sanitize(testId);
+
+            const ariaLabel = el.ariaLabel;
+            if (ariaLabel) return `${el.tagName.toLowerCase()}-${sanitize(ariaLabel)}`;
+            
+            const placeholder = el.placeholder;
+            if (placeholder) return `${el.tagName.toLowerCase()}-${sanitize(placeholder)}`;
+            
+            const text = el.innerText;
+            if (text) return `${el.tagName.toLowerCase()}-${sanitize(text)}`;
+
+            // Fallback for elements with no text or labels (e.g., icon buttons)
+            if (el.id) return sanitize(el.id);
+            if (el.name) return sanitize(el.name);
+            
+            return `${el.tagName.toLowerCase()}-no-identifier`;
         };
 
         let agentIdCounter = 0;
-        const interactiveElements = document.querySelectorAll('a, button, input, textarea, select, [role="button"], [role="link"], [role="textbox"], [role="alert"], [role="log"], [data-testid="toast"]');
+        // Query for standard interactive elements AND elements with data-testid, which are crucial for stable automation.
+        const interactiveElements = document.querySelectorAll(
+            'a, button, input, textarea, select, [role="button"], [role="link"], [role="textbox"], [role="alert"], [role="log"], [data-testid]'
+        );
         
+        // Clear previous IDs to ensure a fresh state for each step.
         document.querySelectorAll('[data-agent-id]').forEach(el => el.removeAttribute('data-agent-id'));
         
         let simplifiedHtml = '';
         const seenIds = new Set();
-        
+
         interactiveElements.forEach(el => {
-            if (agentIdCounter >= 100) return;
+            if (agentIdCounter >= 150) return; // Increased limit slightly for complex pages
+            
+            // Filter out non-visible elements
             const rect = el.getBoundingClientRect();
-            if (rect.width === 0 || rect.height === 0 || el.style.visibility === 'hidden') return;
+            if (rect.width === 0 || rect.height === 0 || el.style.visibility === 'hidden' || el.getAttribute('aria-hidden') === 'true') {
+                return;
+            }
 
             let stableId = generateStableId(el);
             let originalId = stableId;
             let collisionCounter = 1;
+
+            // Ensure the ID is unique on the page for this step
             while (seenIds.has(stableId)) {
                 stableId = `${originalId}-${collisionCounter++}`;
             }
@@ -54,44 +83,44 @@ async function simplifyHtml(page) {
             el.setAttribute('data-agent-id', stableId);
             agentIdCounter++;
             
-            const description = el.innerText || el.ariaLabel || el.placeholder || `[${el.tagName.toLowerCase()}]`;
-            simplifiedHtml += `<element data-agent-id="${stableId}">${description.trim().substring(0, 100)}</element>\n`;
+            // Provide a richer description for the AI, including role and placeholder.
+            const role = el.getAttribute('role');
+            const placeholder = el.getAttribute('placeholder');
+            const description = el.innerText || el.ariaLabel || `[${el.tagName.toLowerCase()}]`;
+            
+            let attributes = `data-agent-id="${stableId}"`;
+            if (role) attributes += ` role="${role}"`;
+            if (placeholder) attributes += ` placeholder="${placeholder}"`;
+            
+            // Use the actual tag name in the simplified HTML to give the AI more context.
+            simplifiedHtml += `<${el.tagName.toLowerCase()} ${attributes}>${description.trim().substring(0, 150)}</${el.tagName.toLowerCase()}>\n`;
         });
-        
         return simplifiedHtml;
     });
 }
 
 
-// +++ THIS IS THE CORRECTED FUNCTION WITH DYNAMIC RE-PLANNING +++
+// +++ THIS FUNCTION IS MODIFIED TO MAKE THE 'wait' ACTION INTERRUPTIBLE +++
 async function runAutonomousAgent(startUrl, taskSummary, strategy, onLog, agentControl) {
   onLog(`🚀 Launching browser with persistent session data...`);
   const browser = await puppeteer.launch({
     headless: false,
     executablePath: CHROME_PATH,
-    args: ['--no-sandbox', '--disable-setuid-sandbox', '--start-maximized'],
+    args: [ '--no-sandbox', '--disable-setuid-sandbox', '--start-maximized', '--disable-infobars', '--window-position=0,0', '--window-size=1920,1080' ],
     userDataDir: USER_DATA_DIR,
-    defaultViewport: null
+    defaultViewport: null,
+    ignoreDefaultArgs: ['--enable-automation'],
   });
   
   let page = null;
-  const originalGoal = taskSummary; // Keep the original goal for re-planning
+  const originalGoal = taskSummary;
 
   try {
     page = (await browser.pages())[0] || await browser.newPage();
-
-    onLog('⚡️ Enabling network interception...');
-    // <<< FIX: This must be set to 'true' to enable request blocking.
-    await page.setRequestInterception(true);
     
-    page.on('request', (req) => {
-      const blockList = ['image', 'stylesheet', 'font', 'media', 'csp_report'];
-      if (blockList.includes(req.resourceType())) {
-        req.abort();
-      } else {
-        req.continue();
-      }
-    });
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36');
+    onLog('⚡️ Configuring network for human-like loading (slower but safer)...');
+    await page.setRequestInterception(false); 
 
     onLog(`▶️ Session loaded automatically.`);
     onLog(`🚀 Navigating to ${startUrl}...`);
@@ -107,7 +136,13 @@ async function runAutonomousAgent(startUrl, taskSummary, strategy, onLog, agentC
       }
 
       onLog(`\n--- Step ${i + 1} / ${MAX_AGENT_STEPS} ---`);
-      await new Promise(r => setTimeout(r, 2000));
+      
+      // Use shorter delay for 'think' loops, and longer for actual actions
+      if (previousAction && previousAction.action === 'think') {
+        await randomDelay(1000, 2000);
+      } else {
+        await randomDelay(1500, 3500);
+      }
       
       const simplifiedHtml = await simplifyHtml(page);
       const currentURL = page.url();
@@ -136,40 +171,35 @@ async function runAutonomousAgent(startUrl, taskSummary, strategy, onLog, agentC
       if (actionHistory.length > MAX_ACTION_HISTORY) actionHistory.pop();
 
       switch (command.action) {
-        // +++ NEW: Add the 'replan' action case +++
+        // ... ('replan', 'type', 'click' cases remain the same) ...
         case 'replan':
           onLog(`🤔 Agent requested a re-plan. Reason: ${command.reason}`);
           const newGoalPrompt = `Original goal: "${originalGoal}". Re-plan context: "${command.reason}"`;
-          
           const newPlan = await createPlan(newGoalPrompt, onLog);
-          
-          // Update the agent's current plan
           taskSummary = newPlan.taskSummary;
           strategy = newPlan.strategy;
           startUrl = newPlan.targetURL;
-          
           onLog(`✅ New plan received! New summary: "${taskSummary}"`);
           onLog(`🚀 Navigating to new start URL: ${startUrl}`);
-          
           await page.goto(startUrl, { waitUntil: 'networkidle2' });
-          
-          // Reset history for the new plan
           actionHistory = [];
           previousAction = null;
-          
-          continue; // Skip to the next loop iteration with the new plan
-
+          continue;
         case 'type':
-          onLog(`▶️ Action: Typing "${command.text}" into ${command.selector}`);
-          await page.waitForSelector(`[data-agent-id="${command.selector}"]`, { visible: true });
-          await page.type(`[data-agent-id="${command.selector}"]`, command.text, { delay: 100 });
+          const typeSelectorId = sanitizeSelectorId(command.selector);
+          onLog(`▶️ Action: Typing "${command.text}" into ${typeSelectorId}`);
+          await page.waitForSelector(`[data-agent-id="${typeSelectorId}"]`, { visible: true });
+          await page.type(`[data-agent-id="${typeSelectorId}"]`, command.text, { delay: Math.random() * 80 + 60 });
           break;
-
         case 'click':
-          const selector = `[data-agent-id="${command.selector}"]`;
+          const clickSelectorId = sanitizeSelectorId(command.selector);
+          const selector = `[data-agent-id="${clickSelectorId}"]`;
           if (command.selector) {
             onLog(`▶️ Action: Clicking selector ${selector}`);
             await page.waitForSelector(selector, { visible: true });
+            onLog(`    ...moving mouse to element first.`);
+            await page.hover(selector);
+            await randomDelay(200, 500);
             await page.evaluate(sel => document.querySelector(sel).click(), selector);
           } else if (command.x !== undefined && command.y !== undefined) {
             onLog(`▶️ Action: Clicking coordinates (X:${command.x}, Y:${command.y})`);
@@ -179,18 +209,34 @@ async function runAutonomousAgent(startUrl, taskSummary, strategy, onLog, agentC
             throw new Error('Click command is missing both selector and coordinates.');
           }
           break;
-
         case 'think':
           onLog(`🤔 Agent is thinking: ${command.thought}`);
+          // 'think' action does nothing but wait for the next loop iteration
           break;
+        
+        // +++ NEW: INTERRUPTIBLE WAIT LOGIC +++
         case 'wait':
           onLog(`⏸️ Action: Wait. Reason: ${command.reason}`);
-          onLog('🟡 Please complete the required action in the browser...');
-          await page.waitForNavigation({ timeout: 0, waitUntil: 'networkidle2' });
-          onLog('✅ User action detected. Resuming agent...');
+          onLog('🟡 Please complete the required action in the browser. Agent is waiting for navigation...');
+          
+          const navigationPromise = page.waitForNavigation({ timeout: 0, waitUntil: 'networkidle2' });
+          
+          const stopSignalPromise = new Promise((resolve, reject) => {
+              const interval = setInterval(() => {
+                  if (agentControl.stop) {
+                      clearInterval(interval);
+                      reject(new Error('Agent stopped by user during wait.'));
+                  }
+              }, 500); // Check for stop signal every 500ms
+          });
+
+          await Promise.race([navigationPromise, stopSignalPromise]);
+          
+          onLog('✅ User action detected or navigation completed. Resuming agent...');
           previousAction = null;
           actionHistory = [];
           break;
+        
         case 'finish':
           onLog(`✅ Action: Finish. ${command.summary}`);
           onLog(`🎉 Browser will close in 5 seconds.`);
@@ -203,6 +249,7 @@ async function runAutonomousAgent(startUrl, taskSummary, strategy, onLog, agentC
     throw new Error('Agent reached maximum steps without finishing the task.');
   } catch (err) {
     onLog(`🚨 Puppeteer Failure: ${err.message}`);
+    // The main try/catch block already handles logging the stop signal error correctly
     if (page && !page.isClosed()) {
         try { 
             const errorScreenshotPath = path.join(__dirname, 'error-screenshot.png');
