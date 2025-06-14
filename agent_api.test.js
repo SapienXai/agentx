@@ -8,9 +8,10 @@ describe('createPlan', () => {
   });
 
   test('returns parsed plan when API response is valid', async () => {
-    const plan = { targetURL: 'http://x.com', taskSummary: 'a', strategy: 'b' };
-    axios.post.mockResolvedValue({ data: { choices: [{ message: { content: JSON.stringify(plan) } }] } });
-    await expect(createPlan('goal')).resolves.toEqual(plan);
+    const apiPlan = { searchTerm: 'x', taskSummary: 'a', strategy: 'b' };
+    axios.post.mockResolvedValue({ data: { choices: [{ message: { content: JSON.stringify(apiPlan) } }] } });
+    const expected = { ...apiPlan, targetURL: 'https://www.google.com/search?q=x' };
+    await expect(createPlan('goal')).resolves.toEqual(expected);
   });
 
   test('throws when response lacks required keys', async () => {

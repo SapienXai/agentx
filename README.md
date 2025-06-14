@@ -43,7 +43,7 @@ The entire process is managed through a clean, modern user interface that runs o
 The agent operates on a sophisticated loop that combines high-level planning with real-time decision-making.
 
 1.  **Goal Input**: The user provides a high-level goal in the UI (e.g., "find the top 3 trending AI articles on Hacker News").
-2.  **Plan Generation**: The goal is sent to the backend, which calls the **`createPlan`** function. This function uses **GPT-4o** to generate a JSON object containing a `targetURL`, a `taskSummary`, and a high-level `strategy`.
+2.  **Plan Generation**: The goal is sent to the backend, which calls the **`createPlan`** function. This function uses **GPT-4o** to generate a JSON object containing a `searchTerm`, a `taskSummary`, and a high-level `strategy`. The search term is converted into a Google search `targetURL` that the agent will open first.
 3.  **User Approval**: The generated plan is displayed in the UI for user confirmation.
 4.  **Autonomous Execution**: Once approved, the **`runAutonomousAgent`** function is triggered. This starts a Puppeteer-controlled Chrome browser.
 5.  **The Action Loop**: The agent enters a loop for each step:
@@ -122,7 +122,7 @@ This is where you start. Enter a high-level goal into the text area and click **
 
 #### 2. 🤖 Agent
 
--   **Plan Review**: After you create a plan, this screen will show you the AI-generated `Target URL`, `Task Summary`, and `Strategy`. You can either **Confirm & Run Task** or **Cancel**.
+-   **Plan Review**: After you create a plan, this screen will show you the AI-generated `searchTerm`, `Target URL`, `Task Summary`, and `Strategy`. You can either **Confirm & Run Task** or **Cancel**.
 -   **Live View**: Once confirmed, this screen shows the live status log of the agent's actions.
 -   **Stop Agent**: A large red **"Stop Agent"** button appears while the agent is running. Click this at any time to immediately terminate the current task.
 
