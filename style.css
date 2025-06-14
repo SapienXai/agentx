@@ -33,6 +33,14 @@
     --status-pending-bg: rgba(3, 169, 244, 0.2);
     --status-pending-text: #81D4FA;
     --status-pending-border: rgba(3, 169, 244, 0.6);
+
+    --status-scheduled-bg: rgba(156, 39, 176, 0.2);
+    --status-scheduled-text: #CE93D8;
+    --status-scheduled-border: rgba(156, 39, 176, 0.6);
+    
+    --status-queued-bg: rgba(158, 158, 158, 0.2);
+    --status-queued-text: #E0E0E0;
+    --status-queued-border: rgba(158, 158, 158, 0.6);
 }
 
 /* --- Reset & Base Styles --- */
@@ -108,6 +116,17 @@ pre.status-log { background-color: var(--bg-color); padding: 12px; border-radius
 .task-action-btn.stop { background-color: #f44336; }
 .task-action-btn:hover { filter: brightness(1.2); }
 .task-action-btn:active { transform: scale(0.96); }
+.run-count-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--status-scheduled-text);
+    background-color: rgba(0,0,0,0.2);
+    padding: 6px 10px;
+    border-radius: 8px;
+    margin-top: 15px;
+}
 
 /* --- Task Status --- */
 .task-status { display: flex; align-items: center; gap: 15px; }
@@ -122,6 +141,18 @@ pre.status-log { background-color: var(--bg-color); padding: 12px; border-radius
 .status-stopped { background-color: var(--status-stopped-bg); color: var(--status-stopped-text); border-color: var(--status-stopped-border); }
 .status-completed { background-color: var(--status-completed-bg); color: var(--status-completed-text); border-color: var(--status-completed-border); }
 .status-pending { background-color: var(--status-pending-bg); color: var(--status-pending-text); border-color: var(--status-pending-border); }
+.status-scheduled { background-color: var(--status-scheduled-bg); color: var(--status-scheduled-text); border-color: var(--status-scheduled-border); }
+.status-queued { background-color: var(--status-queued-bg); color: var(--status-queued-text); border-color: var(--status-queued-border); }
+.task-count-badge {
+    background-color: var(--surface-darker);
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 600;
+    padding: 2px 7px;
+    border-radius: 8px;
+    margin-left: 6px;
+    vertical-align: middle;
+}
 .running-indicator { width: 8px; height: 8px; background-color: var(--status-running-text); border-radius: 50%; animation: pulse 1.5s infinite ease-in-out; }
 @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(165, 214, 167, 0.7); } 70% { box-shadow: 0 0 0 8px rgba(165, 214, 167, 0); } 100% { box-shadow: 0 0 0 0 rgba(165, 214, 167, 0); } }
 

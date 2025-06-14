@@ -6,7 +6,9 @@ let taskHistory = [];
 // --- SELECTORS ---
 const goalInput = document.getElementById('goal-input');
 const runButton = document.getElementById('run-button');
-const activeTasksList = document.getElementById('active-tasks');
+const tasksList = document.getElementById('tasks-list');
+const queueList = document.getElementById('queue-list');
+const scheduledTasksList = document.getElementById('scheduled-tasks');
 const archivedTasksList = document.getElementById('archived-tasks');
 const noTasksMessage = document.getElementById('no-tasks-message');
 const tabLinks = document.querySelectorAll('.tab-link');
@@ -25,46 +27,70 @@ const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
 const socket = new WebSocket(`${wsProtocol}//${window.location.host}`);
 
 socket.onmessage = (event) => {
-    // A log message is expected to be in the format "TASK_ID::Log content"
-    const [taskIdStr, ...logParts] = event.data.split('::');
-    const logMessage = logParts.join('::');
+    const [taskIdStr, ...parts] = event.data.split('::');
+    const command = parts[0];
+    const payload = parts.slice(1).join('::');
     const taskId = parseInt(taskIdStr);
 
     if (isNaN(taskId)) {
-        // Generic log, for now, let's log it to console
         console.log("Generic Log:", event.data);
         return;
     }
-
-    const task = taskHistory.find(t => t.id === taskId);
-    if (task) {
-        task.log = (task.log || '') + logMessage + '\n';
-
-        const stepInfo = parseStepProgress ? parseStepProgress(logMessage) : null;
-        if (stepInfo) {
-            task.progress = stepInfo;
-            updateTaskProgressDisplay(task);
-            localStorage.setItem('taskHistory', JSON.stringify(taskHistory));
+    
+    if (command === 'CREATE_RUN_INSTANCE') {
+        const newRunTask = JSON.parse(payload);
+        if (!taskHistory.find(t => t.id === newRunTask.id)) {
+            taskHistory.push(newRunTask);
         }
+        renderTasks();
+        return;
+    }
 
-        const logElement = document.querySelector(`.task-item[data-task-id='${taskId}'] .status-log`);
-        if (logElement) {
-            logElement.textContent = task.log;
-            logElement.scrollTop = logElement.scrollHeight;
+    const taskToUpdate = taskHistory.find(t => t.id === taskId);
+    if (!taskToUpdate) return;
+    
+    if (command === 'TASK_STATUS_UPDATE') {
+        const newStatus = payload;
+        taskToUpdate.status = newStatus;
+        if (['completed', 'failed', 'stopped'].includes(newStatus)) {
+            taskToUpdate.progress = null;
         }
+        renderTasks();
+        return;
+    }
+
+    if (command === 'RUN_INCREMENT') {
+        taskToUpdate.runCount = (taskToUpdate.runCount || 0) + 1;
+        renderTasks();
+        return;
+    }
+    
+    // Default to log message if no other command matches
+    const logMessage = parts.join('::');
+    taskToUpdate.log = (taskToUpdate.log || '') + logMessage + '\n';
+
+    const stepInfo = parseStepProgress ? parseStepProgress(logMessage) : null;
+    if (stepInfo) {
+        taskToUpdate.progress = stepInfo;
+        updateTaskProgressDisplay(taskToUpdate);
+    }
+
+    const logElement = document.querySelector(`.task-item[data-task-id='${taskId}'] .status-log`);
+    if (logElement) {
+        logElement.textContent = taskToUpdate.log;
+        logElement.scrollTop = logElement.scrollHeight;
     }
 };
 
 socket.onopen = () => console.log('WebSocket connection established.');
 socket.onerror = (error) => console.error('WebSocket Error:', error);
 
-
 // --- UI RENDERING ---
 
 const getStatusPill = (status) => {
-    if (status === 'running') {
-        return `<div class="status-pill status-running"><span class="running-indicator"></span>Running</div>`;
-    }
+    if (status === 'running') return `<div class="status-pill status-running"><span class="running-indicator"></span>Running</div>`;
+    if (status === 'scheduled') return `<div class="status-pill status-scheduled">Scheduled</div>`;
+    if (status === 'queued') return `<div class="status-pill status-queued">Queued</div>`;
     return `<div class="status-pill status-${status}">${status.charAt(0).toUpperCase() + status.slice(1)}</div>`;
 };
 
@@ -96,12 +122,14 @@ const updateTaskProgressDisplay = (task) => {
 const getTaskActions = (task) => {
     switch(task.status) {
         case 'pending':
-            return `
-                <button class="task-action-btn confirm" data-action="confirm">Confirm & Run</button>
-                <button class="task-action-btn" data-action="cancel">Cancel</button>
-            `;
+            return `<button class="task-action-btn confirm" data-action="confirm">Confirm & Run</button>
+                    <button class="task-action-btn" data-action="cancel">Cancel</button>`;
+        case 'queued':
+             return `<button class="task-action-btn stop" data-action="stop">Dequeue</button>`;
         case 'running':
             return `<button class="task-action-btn stop" data-action="stop">Stop Agent</button>`;
+        case 'scheduled':
+            return `<button class="task-action-btn stop" data-action="cancel-schedule">Cancel Schedule</button>`;
         case 'completed':
         case 'failed':
         case 'stopped':
@@ -113,21 +141,23 @@ const getTaskActions = (task) => {
 
 const getTaskDetails = (task) => {
     let content = '';
-    if (task.status === 'pending' && task.plan) {
-        content += `
-            <h4>Proposed Plan</h4>
-            <div class="plan-details">
-                <p><strong>URL:</strong> <code>${task.plan.targetURL}</code></p>
-                <p><strong>Strategy:</strong> ${task.plan.strategy}</p>
-            </div>
-        `;
+    if (task.plan && task.status !== 'completed') {
+        content += `<h4>Proposed Plan</h4><div class="plan-details">
+            ${task.plan.isRecurring ? `<p><strong>Schedule:</strong> <i class="bi bi-clock-history" title="Recurring task"></i> ${task.plan.schedule}</p>` : ''}
+            <p><strong>URL:</strong> <code>${task.plan.targetURL}</code></p>
+            <p><strong>Strategy:</strong> ${task.plan.strategy}</p>
+        </div>`;
     }
 
     if (task.log) {
-        content += `
-            <h4>Agent Log</h4>
-            <pre class="status-log">${task.log}</pre>
-        `;
+        content += `<h4>Agent Log</h4><pre class="status-log">${task.log}</pre>`;
+    }
+    
+    if (task.isRecurring) { // Show run count for original scheduled tasks
+         content += `<div class="run-count-info">
+            <i class="bi bi-arrow-repeat"></i>
+            <span>Run count: <strong>${task.runCount || 0}</strong></span>
+        </div>`;
     }
     
     content += `<div class="task-actions">${getTaskActions(task)}</div>`;
@@ -138,42 +168,72 @@ const createTaskElement = (task) => {
     const details = document.createElement('details');
     details.className = 'task-item';
     details.dataset.taskId = task.id;
-    if (task.status === 'running' || task.status === 'pending') {
-        details.open = true; // Auto-expand active tasks
+    if (['running', 'pending', 'queued'].includes(task.status)) {
+        details.open = true;
     }
 
-    details.innerHTML = `
-        <summary class="task-summary">
+    details.innerHTML = `<summary class="task-summary">
             <div class="task-info">
                 <h3>${task.summary}</h3>
                 <p>${new Date(task.startTime).toLocaleString()}</p>
             </div>
             <div class="task-status">${getStatusPill(task.status)}${getProgressBar(task)}</div>
         </summary>
-        <div class="task-details-content">
-            ${getTaskDetails(task)}
-        </div>
-    `;
+        <div class="task-details-content">${getTaskDetails(task)}</div>`;
     return details;
 };
 
 const renderTasks = () => {
     localStorage.setItem('taskHistory', JSON.stringify(taskHistory));
 
-    activeTasksList.innerHTML = '';
+    tasksList.innerHTML = '';
+    queueList.innerHTML = '';
+    scheduledTasksList.innerHTML = '';
     archivedTasksList.innerHTML = '';
 
-    const active = taskHistory.filter(t => !t.archived);
+    const queue = taskHistory.filter(t => !t.archived && ['queued', 'running'].includes(t.status));
+    const scheduled = taskHistory.filter(t => !t.archived && t.status === 'scheduled');
     const archived = taskHistory.filter(t => t.archived);
+    const tasks = taskHistory.filter(t => !t.archived && !queue.includes(t) && !scheduled.includes(t));
 
-    if (taskHistory.length === 0) {
-        noTasksMessage.classList.remove('d-none');
-    } else {
-        noTasksMessage.classList.add('d-none');
-    }
+    if (taskHistory.length === 0) { noTasksMessage.classList.remove('d-none'); } 
+    else { noTasksMessage.classList.add('d-none'); }
 
-    [...active].reverse().forEach(task => activeTasksList.appendChild(createTaskElement(task)));
+    queue.sort((a, b) => {
+        if (a.status === 'running' && b.status !== 'running') return -1;
+        if (a.status !== 'running' && b.status === 'running') return 1;
+        return a.id - b.id;
+    });
+
+    [...tasks].reverse().forEach(task => tasksList.appendChild(createTaskElement(task)));
+    queue.forEach(task => queueList.appendChild(createTaskElement(task)));
+    [...scheduled].reverse().forEach(task => scheduledTasksList.appendChild(createTaskElement(task)));
     [...archived].reverse().forEach(task => archivedTasksList.appendChild(createTaskElement(task)));
+    
+    const updateCountBadge = (badgeId, count) => {
+        const badge = document.getElementById(badgeId);
+        if (count > 0) {
+            badge.textContent = count;
+            badge.style.display = 'inline-block';
+        } else {
+            badge.style.display = 'none';
+        }
+    };
+    updateCountBadge('queue-count', queue.length);
+    updateCountBadge('scheduled-count', scheduled.length);
+};
+
+const switchToTab = (targetId) => {
+    tabLinks.forEach(link => {
+        link.classList.remove('active');
+        if (link.dataset.target === targetId) {
+            link.classList.add('active');
+        }
+    });
+    document.querySelectorAll('.task-list').forEach(list => {
+        list.style.display = 'none';
+    });
+    document.getElementById(targetId).style.display = 'flex';
 };
 
 // --- EVENT LISTENERS ---
@@ -186,13 +246,8 @@ runButton.addEventListener('click', async () => {
     runButton.textContent = 'Planning...';
 
     try {
-        const response = await fetch('/api/get-plan', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ goal })
-        });
+        const response = await fetch('/api/get-plan', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ goal }) });
         const result = await response.json();
-
         if (result.success) {
             const newTask = {
                 id: Date.now(),
@@ -200,16 +255,17 @@ runButton.addEventListener('click', async () => {
                 status: 'pending',
                 startTime: new Date(),
                 plan: result.plan,
-                archived: false,
-                log: `Plan for "${result.plan.taskSummary}" received. Please confirm to run.\n`,
-                progress: null
+                isRecurring: result.plan.isRecurring,
+                archived: false, 
+                log: `Plan for "${result.plan.taskSummary}" received. ${result.plan.isRecurring ? 'Please confirm to schedule.' : 'Please confirm to run.'}\n`,
+                progress: null,
+                runCount: 0
             };
             taskHistory.push(newTask);
             goalInput.value = '';
             renderTasks();
-        } else {
-            alert(`Failed to create plan: ${result.error}`);
-        }
+            switchToTab('tasks-list');
+        } else { alert(`Failed to create plan: ${result.error}`); }
     } catch (error) {
         alert(`Network error: ${error.message}`);
     } finally {
@@ -230,44 +286,49 @@ taskListsWrapper.addEventListener('click', async (e) => {
 
     switch (action) {
         case 'confirm':
-            task.status = 'running';
-            task.log += "Confirmed. Handing off to autonomous agent...\n";
-            renderTasks(); // Update UI to "running" state immediately
-            
-            const response = await fetch('/api/run-task', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ plan: task.plan, taskId: task.id }) // Pass taskId to backend
-            });
-            const result = await response.json();
-            
-            // Final status update
-            const finalTask = taskHistory.find(t => t.id === taskId);
-            if(result.success) {
-                finalTask.status = 'completed';
-            } else if (result.isUserStop) {
-                finalTask.status = 'stopped';
-            } else {
-                finalTask.status = 'failed';
-            }
-            finalTask.progress = null;
+            task.status = task.isRecurring ? 'scheduled' : 'queued';
+            task.log += task.isRecurring ? "Confirmed. Scheduling task...\n" : "Confirmed. Adding to queue...\n";
             renderTasks();
+            
+            const response = await fetch('/api/run-task', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ plan: task.plan, taskId: task.id }) });
+            if (!response.ok) {
+                const errorResult = await response.json();
+                task.status = 'failed';
+                task.log += `Error: ${errorResult.error}\n`;
+                renderTasks();
+            }
             break;
-
         case 'cancel':
             taskHistory = taskHistory.filter(t => t.id !== taskId);
             renderTasks();
             break;
-
         case 'stop':
             button.disabled = true;
             button.textContent = "Stopping...";
-            await fetch('/api/stop-agent', { method: 'POST' });
+            await fetch('/api/stop-agent', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ taskId: task.id }) });
             break;
-
+        case 'cancel-schedule':
+            button.disabled = true;
+            button.textContent = "Canceling...";
+            try {
+                const stopResponse = await fetch('/api/stop-agent', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ taskId: task.id }) });
+                if (stopResponse.ok) {
+                    task.status = 'stopped';
+                    task.log += 'Schedule has been canceled by the user.\n';
+                    renderTasks();
+                } else {
+                    task.log += 'Error: Failed to cancel schedule on the server.\n';
+                    button.disabled = false;
+                    button.textContent = "Cancel Schedule";
+                }
+            } catch (error) {
+                task.log += `Error: Network failure while canceling schedule. ${error.message}\n`;
+                button.disabled = false;
+                button.textContent = "Cancel Schedule";
+            }
+            break;
         case 'archive':
             task.archived = !task.archived;
-            // A slight delay for the animation
             taskItem.style.transition = 'opacity 0.3s, transform 0.3s';
             taskItem.style.opacity = '0';
             taskItem.style.transform = 'scale(0.95)';
@@ -276,20 +337,12 @@ taskListsWrapper.addEventListener('click', async (e) => {
     }
 });
 
-
-// Tab Switching
 tabLinks.forEach(tab => {
     tab.addEventListener('click', (e) => {
         e.preventDefault();
-        tabLinks.forEach(link => link.classList.remove('active'));
-        e.currentTarget.classList.add('active');
-        
-        const targetId = e.currentTarget.dataset.target;
-        document.getElementById('active-tasks').style.display = targetId === 'active-tasks' ? 'flex' : 'none';
-        document.getElementById('archived-tasks').style.display = targetId === 'archived-tasks' ? 'flex' : 'none';
+        switchToTab(e.currentTarget.dataset.target);
     });
 });
-
 
 // --- MODAL LOGIC ---
 let qrCodeFetched = false;
@@ -325,30 +378,44 @@ closeModalButton.addEventListener('click', () => {
 });
 
 qrModal.addEventListener('click', (e) => {
-    if (e.target === qrModal) { // only close if clicking on the overlay itself
+    if (e.target === qrModal) {
         qrModal.classList.add('d-none');
     }
 });
 
-
-// --- INITIALIZATION ---
+// --- ROBUST INITIALIZATION ---
 document.addEventListener('DOMContentLoaded', () => {
     const storedHistory = localStorage.getItem('taskHistory');
     if (storedHistory) {
         try {
-            // Revive task statuses - tasks that were 'running' or 'pending' should be considered 'stopped' on restart.
-            taskHistory = JSON.parse(storedHistory).map(task => {
-                if (task.status === 'running' || task.status === 'pending') {
+            const loadedTasks = JSON.parse(storedHistory);
+            taskHistory = loadedTasks.map(task => {
+                // On any reload, the backend queue is ALWAYS empty.
+                // Therefore, any task that was running or queued is now considered stopped.
+                if (['running', 'queued'].includes(task.status)) {
                     task.status = 'stopped';
-                    task.log = (task.log || '') + '\n--- Task interrupted by app restart. ---\n';
+                    task.log = (task.log || '') + `\n--- Task stopped due to application restart. ---\n`;
                     task.progress = null;
                 }
+                
+                // Pending tasks that were never confirmed are just removed.
+                if (task.status === 'pending') {
+                    return null; // This will be filtered out later.
+                }
+
+                // Scheduled tasks remain, as the backend will re-awaken them.
+                if (task.status === 'scheduled') {
+                    task.log = (task.log || '') + `\n--- Application restarted. Schedule remains active. ---\n`;
+                }
+
                 return task;
-            });
-        } catch (e) {
-            console.error("Failed to parse task history:", e);
-            taskHistory = [];
+            }).filter(Boolean); // Filter out any null tasks (the pending ones)
+
+        } catch (e) { 
+            console.error("Failed to parse task history:", e); 
+            taskHistory = []; 
         }
     }
+    document.getElementById('tasks-list').style.display = 'flex';
     renderTasks();
 });

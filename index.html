@@ -39,13 +39,17 @@
         <!-- Tasks Section -->
         <main class="tasks-container">
             <nav class="tabs">
-                <a href="#active" class="tab-link active" data-target="active-tasks">Tasks</a>
+                <a href="#tasks" class="tab-link active" data-target="tasks-list">Tasks</a>
+                <a href="#queue" class="tab-link" data-target="queue-list">Queue <span id="queue-count" class="task-count-badge"></span></a>
+                <a href="#scheduled" class="tab-link" data-target="scheduled-tasks">Scheduled <span id="scheduled-count" class="task-count-badge"></span></a>
                 <a href="#archived" class="tab-link" data-target="archived-tasks">Archive</a>
             </nav>
 
             <div id="task-lists-wrapper">
                 <!-- Task items will be injected by renderer.js -->
-                <div id="active-tasks" class="task-list"></div>
+                <div id="tasks-list" class="task-list"></div>
+                <div id="queue-list" class="task-list" style="display: none;"></div>
+                <div id="scheduled-tasks" class="task-list" style="display: none;"></div>
                 <div id="archived-tasks" class="task-list" style="display: none;"></div>
                 <p id="no-tasks-message" class="text-muted">No tasks yet. Create one above to get started!</p>
             </div>

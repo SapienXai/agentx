@@ -20,24 +20,38 @@ async function createPlan(userGoal, onLog = console.log) {
 
 # CORE TASK
 1.  Identify the main website, brand, or company to search for.
-2.  Summarize the user's ultimate goal.
-3.  Outline a brief strategy to start the task.
+2.  Summarize the user's ultimate goal into a short task summary.
+3.  Outline a brief, high-level strategy to start the task.
+4.  **Analyze if the goal is a recurring task**. Look for keywords like "every day", "each week", "every 15 minutes", etc.
+    - If it IS recurring, set "isRecurring" to true and provide both a human-readable schedule and a standard cron string.
+    - If it is a one-time task, set "isRecurring" to false.
 
 # RESPONSE FORMAT
 Your output MUST be a single, valid JSON object. Do not include any text before or after the JSON.
-The JSON object must contain these exact keys: "searchTerm", "taskSummary", and "strategy".
+The JSON object must contain these exact keys: "searchTerm", "taskSummary", "strategy", "isRecurring", "schedule", and "cron".
+
+# CRON FORMAT
+- Use standard 5-field cron syntax: (minute hour day-of-month month day-of-week).
+- If the task is not recurring, "schedule" and "cron" MUST be empty strings ("").
+- If you cannot determine a valid cron schedule from the user's request, assume it is not a recurring task.
+
 
 # JSON STRUCTURE EXAMPLE:
 {
   "searchTerm": "Twitter",
   "taskSummary": "Post a tweet about a new product",
-  "strategy": "Search for the main website, find the login button, and then proceed to the compose tweet page."
+  "strategy": "Search for the main website, find the login button, and then proceed to the compose tweet page.",
+  "isRecurring": false,
+  "schedule": "",
+  "cron": ""
 }
 
 # EXAMPLES OF LOGIC:
 - User Goal: "Post a tweet about our new product." -> "searchTerm": "Twitter"
 - User Goal: "Find the latest news on BBC." -> "searchTerm": "BBC News"
 - User Goal: "Order a book from Amazon." -> "searchTerm": "Amazon"
+- User Goal: "Send a marketing email every Friday at 10 AM" -> "isRecurring": true, "schedule": "Every Friday at 10:00 AM", "cron": "0 10 * * 5"
+- User Goal: "Check the stock price every 15 minutes" -> "isRecurring": true, "schedule": "Every 15 minutes", "cron": "*/15 * * * *"
 
 ${selfCorrectionPrompt}`;
 
@@ -48,8 +62,14 @@ ${selfCorrectionPrompt}`;
             }, { headers: { "Authorization": `Bearer ${OPENAI_API_KEY}` } });
 
             const plan = JSON.parse(response.data.choices[0].message.content);
-            if (!plan.searchTerm || typeof plan.searchTerm !== 'string' || !plan.taskSummary || typeof plan.taskSummary !== 'string' || !plan.strategy || typeof plan.strategy !== 'string') {
-                throw new Error("Invalid plan schema: The generated JSON is missing or has invalid 'searchTerm', 'taskSummary', or 'strategy' keys.");
+            const requiredKeys = ["searchTerm", "taskSummary", "strategy", "isRecurring", "schedule", "cron"];
+            for (const key of requiredKeys) {
+                if (plan[key] === undefined) {
+                     throw new Error(`Invalid plan schema: The generated JSON is missing the required key '${key}'.`);
+                }
+            }
+            if (typeof plan.isRecurring !== 'boolean') {
+                 throw new Error(`Invalid plan schema: 'isRecurring' must be a boolean.`);
             }
             
             plan.targetURL = `https://www.google.com/search?q=${encodeURIComponent(plan.searchTerm)}`;

@@ -1,0 +1,32 @@
+{
+  "1749941082152": {
+    "id": 1749941082152,
+    "plan": {
+      "searchTerm": "Twitter",
+      "taskSummary": "Send a unique tweet expressing feelings of being trapped and a desire to be free.",
+      "strategy": "Create a schedule for sending tweets that convey emotional depth and uniqueness. Develop content for each tweet while ensuring it aligns with the theme of feeling trapped and longing for freedom.",
+      "isRecurring": true,
+      "schedule": "Every hour",
+      "cron": "0 * * * *",
+      "targetURL": "https://www.google.com/search?q=Twitter"
+    },
+    "summary": "Send a unique tweet expressing feelings of being trapped and a desire to be free.",
+    "isRecurring": true,
+    "status": "scheduled"
+  },
+  "1749941167677": {
+    "id": 1749941167677,
+    "plan": {
+      "searchTerm": "Twitter",
+      "taskSummary": "Create a tweet every minute about feeling trapped and longing for freedom.",
+      "strategy": "Access the Twitter website, log in, and draft unique tweets that reflect the theme of emotional depth. Use a timer to ensure a tweet is posted every minute.",
+      "isRecurring": true,
+      "schedule": "Every minute",
+      "cron": "* * * * *",
+      "targetURL": "https://www.google.com/search?q=Twitter"
+    },
+    "summary": "Create a tweet every minute about feeling trapped and longing for freedom.",
+    "isRecurring": true,
+    "status": "scheduled"
+  }
+}
