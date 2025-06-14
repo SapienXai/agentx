@@ -111,6 +111,11 @@ pre.status-log { background-color: var(--bg-color); padding: 12px; border-radius
 
 /* --- Task Status --- */
 .task-status { display: flex; align-items: center; gap: 15px; }
+.task-progress { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; font-size: 12px; color: var(--text-secondary); }
+.task-progress progress { width: 80px; height: 6px; }
+.task-progress progress::-webkit-progress-bar { background-color: var(--surface-darker); border-radius: 3px; }
+.task-progress progress::-webkit-progress-value { background-color: var(--primary-action); border-radius: 3px; }
+.task-progress progress::-moz-progress-bar { background-color: var(--primary-action); border-radius: 3px; }
 .status-pill { display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 20px; font-size: 14px; font-weight: 500; border: 1px solid; }
 .status-running { background-color: var(--status-running-bg); color: var(--status-running-text); border-color: var(--status-running-border); }
 .status-failed { background-color: var(--status-failed-bg); color: var(--status-failed-text); border-color: var(--status-failed-border); }
