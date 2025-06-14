@@ -39,6 +39,14 @@ socket.onmessage = (event) => {
     const task = taskHistory.find(t => t.id === taskId);
     if (task) {
         task.log = (task.log || '') + logMessage + '\n';
+
+        const stepInfo = parseStepProgress ? parseStepProgress(logMessage) : null;
+        if (stepInfo) {
+            task.progress = stepInfo;
+            updateTaskProgressDisplay(task);
+            localStorage.setItem('taskHistory', JSON.stringify(taskHistory));
+        }
+
         const logElement = document.querySelector(`.task-item[data-task-id='${taskId}'] .status-log`);
         if (logElement) {
             logElement.textContent = task.log;
@@ -58,6 +66,31 @@ const getStatusPill = (status) => {
         return `<div class="status-pill status-running"><span class="running-indicator"></span>Running</div>`;
     }
     return `<div class="status-pill status-${status}">${status.charAt(0).toUpperCase() + status.slice(1)}</div>`;
+};
+
+const getProgressBar = (task) => {
+    if (!task.progress || !task.progress.total) return '';
+    return `<div class="task-progress"><progress value="${task.progress.current}" max="${task.progress.total}"></progress><span>Step ${task.progress.current} of ${task.progress.total}</span></div>`;
+};
+
+const updateTaskProgressDisplay = (task) => {
+    const taskEl = document.querySelector(`.task-item[data-task-id='${task.id}']`);
+    if (!taskEl) return;
+    let progressEl = taskEl.querySelector('.task-progress');
+
+    if (task.progress && task.progress.total) {
+        if (!progressEl) {
+            taskEl.querySelector('.task-status').insertAdjacentHTML('beforeend', getProgressBar(task));
+        } else {
+            const prog = progressEl.querySelector('progress');
+            const span = progressEl.querySelector('span');
+            prog.max = task.progress.total;
+            prog.value = task.progress.current;
+            span.textContent = `Step ${task.progress.current} of ${task.progress.total}`;
+        }
+    } else if (progressEl) {
+        progressEl.remove();
+    }
 };
 
 const getTaskActions = (task) => {
@@ -115,7 +148,7 @@ const createTaskElement = (task) => {
                 <h3>${task.summary}</h3>
                 <p>${new Date(task.startTime).toLocaleString()}</p>
             </div>
-            <div class="task-status">${getStatusPill(task.status)}</div>
+            <div class="task-status">${getStatusPill(task.status)}${getProgressBar(task)}</div>
         </summary>
         <div class="task-details-content">
             ${getTaskDetails(task)}
@@ -168,7 +201,8 @@ runButton.addEventListener('click', async () => {
                 startTime: new Date(),
                 plan: result.plan,
                 archived: false,
-                log: `Plan for "${result.plan.taskSummary}" received. Please confirm to run.\n`
+                log: `Plan for "${result.plan.taskSummary}" received. Please confirm to run.\n`,
+                progress: null
             };
             taskHistory.push(newTask);
             goalInput.value = '';
@@ -216,6 +250,7 @@ taskListsWrapper.addEventListener('click', async (e) => {
             } else {
                 finalTask.status = 'failed';
             }
+            finalTask.progress = null;
             renderTasks();
             break;
 
@@ -306,6 +341,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (task.status === 'running' || task.status === 'pending') {
                     task.status = 'stopped';
                     task.log = (task.log || '') + '\n--- Task interrupted by app restart. ---\n';
+                    task.progress = null;
                 }
                 return task;
             });
