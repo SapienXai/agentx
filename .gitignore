@@ -34,7 +34,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
-/chrome_session_data
+/playwright_session_data
 error-screenshot.png
 package-lock.json
 
