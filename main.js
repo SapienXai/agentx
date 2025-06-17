@@ -18,7 +18,8 @@ const qrcode = require('qrcode');
 const cron = require('node-cron');
 const fs = require('fs');
 const { createPlan } = require('./agent_api.js');
-const { runAutonomousAgent } = require('./puppeteer_executor.js');
+// +++ CHANGE: Import the new Playwright executor +++
+const { runAutonomousAgent } = require('./playwright_executor.js');
 
 const PORT = process.env.PORT || 3000;
 
@@ -283,5 +284,3 @@ function createWindow() {
 app.whenReady().then(createWindow);
 
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
-
-// THE DUPLICATED FUNCTIONS THAT WERE HERE HAVE BEEN DELETED.

@@ -1,10 +1,9 @@
 // agent_api.js
 
 const axios = require("axios");
-
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
-// ... (createPlan function remains unchanged) ...
+// createPlan function remains unchanged...
 async function createPlan(userGoal, onLog = console.log) {
     const maxRetries = 2;
     let lastError = null;
@@ -84,34 +83,41 @@ ${selfCorrectionPrompt}`;
     throw new Error(`AI failed to generate a valid plan after ${maxRetries} attempts. Last error: ${lastError}`);
 }
 
-
-// +++ THIS FUNCTION IS CORRECTED TO HANDLE WAITING AND STOPPABLE STATES +++
-async function decideNextBrowserAction(goal, strategy, currentURL, simplifiedHtml, screenshotBase64, previousAction, isStuck, actionHistory = [], onLog = console.log) {
-    onLog(`🧠 Agent is thinking about the next action (with vision & memory)...`);
+async function decideNextBrowserAction(goal, strategy, currentURL, pageStructure, screenshotBase64, credentials, actionHistory = [], onLog = console.log) {
+    onLog(`🧠 Agent is thinking about the next action (using Structure & Vision)...`);
     try {
-        // +++ FIX: Added a new "Element-Action Guide" to help the AI choose the correct action for an element type. +++
-        const systemPrompt = `You are an expert web agent. Your primary tool is vision. You analyze a screenshot and a simplified list of HTML elements to decide the next action.
+        // +++ NEW, STRICTER PROMPT +++
+        const systemPrompt = `You are an expert web agent. Your task is to achieve a goal by examining a screenshot and a structured representation of the webpage.
 
-# CORE LOGIC (Follow in Order):
-1.  **GOAL COMPLETION CHECK:** Analyze the screenshot for signs of success (e.g., "Post successful," "Message sent"). If complete, you MUST use \`finish\`.
-2.  **RE-PLANNING CHECK:** Is the page an error (e.g., 404), or is the strategy impossible from here? If so, you MUST use \`replan\`.
-3.  **MANUAL INTERVENTION HANDLER:** Is the agent blocked by a login/signup form or a CAPTCHA that it cannot solve? If so, you MUST use \`wait\` to pause for the user.
-4.  **PAGE LOAD / UNCERTAINTY HANDLER:** If the page seems to be loading, an element isn't visible yet, or you are simply unsure, you MUST use \`think\`. This allows the agent to re-evaluate in the next step without stopping. Do NOT use \`wait\` for this.
-5.  **ACTION SELECTION:** Based on visual evidence and the element type, choose the next logical action.
+# CORE LOGIC & RULES
+1.  **REASONING:** First, in the "thought" field, write down your step-by-step reasoning.
+2.  **ACTION:** Based on your reasoning, choose **one** action to perform from the list below.
+3.  **POST-LOGIN BEHAVIOR:** After logging in, you will be on a main page (like a social media feed). Do NOT use \`wait\` for dynamic content like posts to load. Instead, use \`think\` if you are unsure, or proceed with the next step of your task (e.g., find the 'Compose' button).
+4.  **SELECTOR HIERARCHY:** ALWAYS prefer \`testid\` if available. It is the most stable identifier. If not, use \`role\` and \`name\`.
 
-# ELEMENT-ACTION GUIDE
--   **Use \`type\` for:** \`<input>\`, \`<textarea>\` (or elements with \`role="textbox"\`). You cannot \`click\` these.
--   **Use \`click\` for:** \`<button>\`, \`<a>\`, \`<div>\` (or elements with \`role="button"\`, \`role="link"\`, etc.).
+# AVAILABLE ACTIONS (JSON FORMAT ONLY)
 
-# ACTION FORMAT (VALID JSON ONLY)
-**IMPORTANT**: For "click" and "type", the "selector" value MUST be the string from the \`data-agent-id\` attribute ONLY.
--   \`{"action": "replan", "reason": "Explain why the old plan failed."}\`
--   \`{"action": "click", "selector": "the-actual-id-from-the-html-list"}\`
--   \`{"action": "click", "x": <number>, "y": <number>, "reason": "Clicked element not in HTML."}\`
--   \`{"action": "type", "selector": "the-id-of-the-input-element", "text": "..."}\`
--   \`{"action": "wait", "reason": "Waiting for user to solve login/signup or CAPTCHA."}\` (Use this sparingly!)
--   \`{"action": "think", "thought": "The page is loading, I will wait and re-evaluate."}\` (Use this if you are not sure or the page isn't ready)
--   \`{"action": "finish", "summary": "Goal is complete. [Your summary]"}\``;
+*   **\`click\` / \`type\`**: To interact with an element.
+    -   (With testid): \`{"thought": "...", "action": "click", "selector": {"testid": "tweetButtonInline"}}\`
+    -   (With role/name): \`{"thought": "...", "action": "click", "selector": {"role": "button", "name": "Log In"}}\`
+
+*   **\`think\`**: Use this if the page is visibly loading (e.g., a full-page white screen), an element you need isn't there yet, OR you are on a dynamic feed and are waiting for content. **This is your default 'wait' for page content.**
+    -   \`{"thought": "I've just logged in. The main feed is loading posts. I will think for a moment to let it stabilize before looking for the compose button.", "action": "think"}\`
+
+*   **\`wait\`**: Use this ONLY for situations that require HUMAN intervention (like a CAPTCHA or a login form you lack credentials for). **DO NOT use this for normal page loading.**
+    -   \`{"thought": "I am blocked by a CAPTCHA which I cannot solve.", "action": "wait", "reason": "Waiting for user to solve CAPTCHA."}\`
+    -   \`{"thought": "I see a login form, but have no credentials.", "action": "wait", "reason": "Waiting for user to log in."}\`
+
+*   **\`finish\`**: When the user's goal has been successfully completed.
+    -   \`{"thought": "The confirmation 'Posted successfully' is visible. Task complete.", "action": "finish", "summary": "Successfully posted the update."}\`
+
+*   **\`replan\`**: If the current strategy is failing, you are on an error page (404), or you are on the wrong website entirely.
+    -   \`{"thought": "This is a 404 page. The plan is blocked.", "action": "replan", "reason": "Landed on a 404 page."}\`
+
+# LOGIN RULES
+- **IF** you see a login form and credentials **ARE** available, use them. If you are already logged in (e.g., you see a profile picture instead of a 'Log In' button), do NOT try to log in again.
+- **IF** you see a login form and credentials **ARE NOT** available, you **MUST** use the \`wait\` action.
+`;
 
         let historyLog = "No history yet.";
         if (actionHistory && actionHistory.length > 0) {
@@ -122,36 +128,40 @@ async function decideNextBrowserAction(goal, strategy, currentURL, simplifiedHtm
 -   **Overall Goal:** "${goal}"
 -   **Current Strategy:** "${strategy}"
 -   **Current URL:** \`${currentURL}\`
--   **LOOP DETECTED:** \`${isStuck}\` (If true, you MUST try a new action)
+-   **Credentials Found for this site:** ${credentials ? `Yes (username: ${credentials.username})` : 'No'}
 
 ## RECENT ACTION HISTORY
 ${historyLog}
 
-## INTERACTIVE ELEMENTS LIST (May be incomplete)
-\`\`\`html
-${simplifiedHtml}
+## PAGE STRUCTURE (Accessibility Tree & Test IDs)
+\`\`\`json
+${pageStructure}
 \`\`\`
 
-**Your Task:** Analyze the screenshot. Based on your core logic and the element-action guide, decide the single next JSON action. If the page is still loading or you are unsure, use 'think'.`;
+**Your Task:** Analyze the screenshot and page structure. Prioritize using a \`testid\` for your selector. Provide your next action as a single JSON object.
+${credentials ? `\n## CREDENTIALS TO USE\n- username: "${credentials.username}"\n- password: "${credentials.password}"` : ''}
+`;
+        
+        const messages = [
+            { role: "system", content: systemPrompt },
+            {
+                role: "user",
+                content: [
+                    { type: "text", text: userPrompt },
+                    {
+                        type: "image_url",
+                        image_url: {
+                            url: `data:image/jpeg;base64,${screenshotBase64}`,
+                            detail: "high"
+                        }
+                    }
+                ]
+            }
+        ];
 
         const response = await axios.post("https://api.openai.com/v1/chat/completions", {
-            model: "gpt-4o-mini",
-            messages: [
-                { role: "system", content: systemPrompt },
-                {
-                    role: "user",
-                    content: [
-                        { type: "text", text: userPrompt },
-                        {
-                            type: "image_url",
-                            image_url: {
-                                url: `data:image/jpeg;base64,${screenshotBase64}`,
-                                detail: "high"
-                            }
-                        }
-                    ]
-                }
-            ],
+            model: "gpt-4o",
+            messages: messages,
             response_format: { type: "json_object" }
         }, { headers: { "Authorization": `Bearer ${OPENAI_API_KEY}` } });
 
