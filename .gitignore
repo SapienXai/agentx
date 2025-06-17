@@ -40,5 +40,5 @@ package-lock.json
 
 # ... other ignored files ...
 credential_store.json
-trace_1750167749639.zip
+.zip
 scheduled_tasks.json
