@@ -37,3 +37,8 @@ next-env.d.ts
 /chrome_session_data
 error-screenshot.png
 package-lock.json
+
+# ... other ignored files ...
+credential_store.json
+trace_1750167749639.zip
+scheduled_tasks.json
