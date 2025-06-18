@@ -8,7 +8,20 @@ if (!process.env.OPENAI_API_KEY) {
     process.exit(1);
 }
 
-const { app, BrowserWindow, screen } = require('electron'); // +++ Added 'screen'
+// +++ CHANGE: Updated check to include the WSS URL +++
+if (process.env.USE_BROWSERLESS === 'true') {
+    if (process.env.BROWSERLESS_API_KEY && process.env.BROWSERLESS_WSS_URL) {
+        console.log('✅ Browser mode: Remote (Browserless.io)');
+    } else {
+        console.warn('⚠️ Browserless.io mode is enabled, but BROWSERLESS_API_KEY or BROWSERLESS_WSS_URL is missing in .env file. Falling back to local browser.');
+        console.log('✅ Browser mode: Local (Headless)');
+    }
+} else {
+    console.log('✅ Browser mode: Local (Headless)');
+}
+
+
+const { app, BrowserWindow, screen } = require('electron');
 const path = require('path');
 const http = require('http');
 const express = require('express');
@@ -47,7 +60,6 @@ function createWindow() {
     const localIp = getLocalIpAddress();
     const serverUrl = `http://${localIp}:${PORT}`;
     
-    // +++ NEW: Get the primary screen's available work area size +++
     const primaryDisplay = screen.getPrimaryDisplay();
     const screenSize = primaryDisplay.workAreaSize;
     console.log(`🖥️  Detected screen work area: ${screenSize.width}x${screenSize.height}`);
@@ -159,7 +171,6 @@ function createWindow() {
             agentControls[taskId] = { stop: false, isRunning: true };
             
             taskLogger(`▶️ Agent starting execution for: "${plan.taskSummary}"`);
-            // +++ CHANGE: Pass the detected screen size to the agent executor +++
             await runAutonomousAgent(plan.targetURL, plan.taskSummary, plan.plan, taskLogger, agentControls[taskId], screenSize);
             taskLogger('✅ Agent finished successfully!');
             broadcast(`${taskId}::TASK_STATUS_UPDATE::completed`);
