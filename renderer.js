@@ -142,10 +142,13 @@ const getTaskActions = (task) => {
 const getTaskDetails = (task) => {
     let content = '';
     if (task.plan && task.status !== 'completed') {
+        // +++ CHANGE: Display a list of steps instead of a single strategy string +++
+        const planSteps = task.plan.plan.map(p => `<li>${p.step}</li>`).join('');
         content += `<h4>Proposed Plan</h4><div class="plan-details">
             ${task.plan.isRecurring ? `<p><strong>Schedule:</strong> <i class="bi bi-clock-history" title="Recurring task"></i> ${task.plan.schedule}</p>` : ''}
-            <p><strong>URL:</strong> <code>${task.plan.targetURL}</code></p>
-            <p><strong>Strategy:</strong> ${task.plan.strategy}</p>
+            <p><strong>Initial URL:</strong> <code>${task.plan.targetURL}</code></p>
+            <p><strong>Steps:</strong></p>
+            <ol style="margin-left: 20px; padding-left: 10px;">${planSteps}</ol>
         </div>`;
     }
 

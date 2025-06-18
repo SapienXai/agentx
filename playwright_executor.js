@@ -5,10 +5,9 @@ const path = require('path');
 const { chromium } = require('playwright');
 const { createPlan, decideNextBrowserAction } = require('./agent_api.js'); 
 
-const MAX_AGENT_STEPS = 15;
+const MAX_AGENT_STEPS = 25;
 const MAX_ACTION_HISTORY = 4;
 const CREDENTIALS_PATH = path.join(__dirname, 'credential_store.json');
-// +++ NEW: Define a path for our persistent session data +++
 const USER_DATA_DIR = path.join(__dirname, 'playwright_session_data');
 
 function getCredentialsForUrl(url) {
@@ -54,16 +53,16 @@ async function getPageStructure(page) {
     };
 }
 
-async function runAutonomousAgent(startUrl, taskSummary, strategy, onLog, agentControl) {
-  // +++ CHANGE: Use a persistent context instead of a fresh one +++
+// +++ CHANGE: Added screenSize parameter +++
+async function runAutonomousAgent(startUrl, taskSummary, plan, onLog, agentControl, screenSize) {
   onLog(`🚀 Launching browser with persistent session from: ${USER_DATA_DIR}`);
   const context = await chromium.launchPersistentContext(USER_DATA_DIR, {
       headless: false,
-      viewport: { width: 1920, height: 1080 },
+      // +++ CHANGE: Use dynamic screen size or a safe default, instead of hardcoded 1920x1080 +++
+      viewport: screenSize || { width: 1280, height: 720 },
       userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
   });
   
-  // A persistent context can have 0 pages if the browser was already open.
   const page = context.pages().length > 0 ? context.pages()[0] : await context.newPage();
   
   const tracePath = path.join(__dirname, `trace_${Date.now()}.zip`);
@@ -71,7 +70,10 @@ async function runAutonomousAgent(startUrl, taskSummary, strategy, onLog, agentC
   onLog(`📊 Trace file will be saved to: ${tracePath}`);
 
   const originalGoal = taskSummary;
-  let browser = context.browser(); // Get browser instance for the finally block
+  let browser = context.browser();
+
+  let currentPlan = plan;
+  let currentStepIndex = 0;
 
   try {
     onLog(`🚀 Navigating to ${startUrl}...`);
@@ -83,8 +85,16 @@ async function runAutonomousAgent(startUrl, taskSummary, strategy, onLog, agentC
       if (agentControl && agentControl.stop) {
         throw new Error('Agent stopped by user.');
       }
+      
+      if (currentStepIndex >= currentPlan.length) {
+          onLog('🎉 All sub-tasks completed! Finishing execution.');
+          return;
+      }
+      
+      let currentSubTask = currentPlan[currentStepIndex].step;
 
-      onLog(`\n--- Step ${i + 1} / ${MAX_AGENT_STEPS} ---`);
+      onLog(`\n--- Step ${i + 1} / ${MAX_AGENT_STEPS} (Sub-Task ${currentStepIndex + 1}/${currentPlan.length}) ---`);
+      onLog(`🎯 Current Sub-Task: "${currentSubTask}"`);
       
       await new Promise(r => setTimeout(r, 2000));
 
@@ -101,9 +111,13 @@ async function runAutonomousAgent(startUrl, taskSummary, strategy, onLog, agentC
       onLog("📸 Taking screenshot for analysis...");
       const screenshotBase64 = await page.screenshot({ type: 'jpeg', quality: 90 }).then(b => b.toString('base64'));
 
+      const fullPlanString = currentPlan.map((p, index) => {
+          return `${index === currentStepIndex ? '--> ' : '    '}${index + 1}. ${p.step}`;
+      }).join('\n');
+
       let command;
       try {
-        command = await decideNextBrowserAction(taskSummary, strategy, currentURL, structureString, screenshotBase64, credentials, actionHistory, onLog);
+        command = await decideNextBrowserAction(originalGoal, fullPlanString, currentSubTask, currentURL, structureString, screenshotBase64, credentials, actionHistory, onLog);
       } catch (apiError) {
           onLog(`🧠 API call failed for this step. Will retry. Error: ${apiError.message}`);
           continue;
@@ -117,18 +131,22 @@ async function runAutonomousAgent(startUrl, taskSummary, strategy, onLog, agentC
       if (actionHistory.length > MAX_ACTION_HISTORY) actionHistory.pop();
 
       switch (command.action) {
-        case 'replan':
+        case 'replan': {
           onLog(`🤔 Agent requested a re-plan. Reason: ${command.reason}`);
-          const newGoalPrompt = `Original goal: "${originalGoal}". Re-plan context: "${command.reason}"`;
-          const newPlan = await createPlan(newGoalPrompt, onLog);
-          taskSummary = newPlan.taskSummary;
-          strategy = newPlan.strategy;
-          startUrl = newPlan.targetURL;
+          const newGoalPrompt = `Original goal: "${originalGoal}". The current sub-task "${currentSubTask}" failed. Re-plan context: "${command.reason}"`;
+          const newPlanData = await createPlan(newGoalPrompt, onLog);
+          
+          taskSummary = newPlanData.taskSummary;
+          currentPlan = newPlanData.plan;
+          startUrl = newPlanData.targetURL;
+          currentStepIndex = 0;
+          
           onLog(`✅ New plan received! New summary: "${taskSummary}"`);
           onLog(`🚀 Navigating to new start URL: ${startUrl}`);
           await page.goto(startUrl, { waitUntil: 'domcontentloaded' });
           actionHistory = [];
           break;
+        }
 
         case 'type':
         case 'click': {
@@ -149,15 +167,26 @@ async function runAutonomousAgent(startUrl, taskSummary, strategy, onLog, agentC
                 continue;
             }
 
-            if (command.action === 'type') {
-                onLog(`   ... Typing "${command.text}"`);
-                await selector.fill(command.text);
-            } else {
-                onLog(`   ... Clicking element.`);
-                await selector.click();
+            try {
+                if (command.action === 'type') {
+                    onLog(`   ... Typing "${command.text}"`);
+                    await selector.fill(command.text);
+                } else {
+                    onLog(`   ... Clicking element.`);
+                    await selector.click({timeout: 15000});
+                }
+            } catch(e) {
+                onLog(`❌ Action failed: ${e.message.split('\n')[0]}`);
+                continue; 
             }
             break;
         }
+
+        case 'finish_step':
+          onLog(`✅ Sub-task "${currentSubTask}" completed.`);
+          currentStepIndex++;
+          actionHistory = []; 
+          break;
 
         case 'think':
           onLog(`🤔 Agent is thinking... will re-evaluate in the next step.`);
@@ -210,7 +239,6 @@ async function runAutonomousAgent(startUrl, taskSummary, strategy, onLog, agentC
         await context.tracing.stop({ path: tracePath });
         onLog(`📊 Trace file saved. To view it, drag ${tracePath} into https://trace.playwright.dev/`);
     }
-    // Closing the context will close the browser page.
     await context.close();
   }
 }

@@ -8,7 +8,7 @@ if (!process.env.OPENAI_API_KEY) {
     process.exit(1);
 }
 
-const { app, BrowserWindow } = require('electron');
+const { app, BrowserWindow, screen } = require('electron'); // +++ Added 'screen'
 const path = require('path');
 const http = require('http');
 const express = require('express');
@@ -18,7 +18,6 @@ const qrcode = require('qrcode');
 const cron = require('node-cron');
 const fs = require('fs');
 const { createPlan } = require('./agent_api.js');
-// +++ CHANGE: Import the new Playwright executor +++
 const { runAutonomousAgent } = require('./playwright_executor.js');
 
 const PORT = process.env.PORT || 3000;
@@ -48,6 +47,11 @@ function createWindow() {
     const localIp = getLocalIpAddress();
     const serverUrl = `http://${localIp}:${PORT}`;
     
+    // +++ NEW: Get the primary screen's available work area size +++
+    const primaryDisplay = screen.getPrimaryDisplay();
+    const screenSize = primaryDisplay.workAreaSize;
+    console.log(`🖥️  Detected screen work area: ${screenSize.width}x${screenSize.height}`);
+
     const expressApp = express();
     const server = http.createServer(expressApp);
     const wss = new WebSocketServer({ server });
@@ -155,7 +159,8 @@ function createWindow() {
             agentControls[taskId] = { stop: false, isRunning: true };
             
             taskLogger(`▶️ Agent starting execution for: "${plan.taskSummary}"`);
-            await runAutonomousAgent(plan.targetURL, plan.taskSummary, plan.strategy, taskLogger, agentControls[taskId]);
+            // +++ CHANGE: Pass the detected screen size to the agent executor +++
+            await runAutonomousAgent(plan.targetURL, plan.taskSummary, plan.plan, taskLogger, agentControls[taskId], screenSize);
             taskLogger('✅ Agent finished successfully!');
             broadcast(`${taskId}::TASK_STATUS_UPDATE::completed`);
             
