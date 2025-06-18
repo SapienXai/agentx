@@ -53,35 +53,15 @@ async function getPageStructure(page) {
     };
 }
 
+// +++ CHANGE: Added screenSize parameter +++
 async function runAutonomousAgent(startUrl, taskSummary, plan, onLog, agentControl, screenSize) {
-  let context;
-  let browserToClose = null; 
-
-  const useBrowserless = process.env.USE_BROWSERLESS === 'true';
-  const browserlessApiKey = process.env.BROWSERLESS_API_KEY;
-  const browserlessWssUrl = process.env.BROWSERLESS_WSS_URL;
-  const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36';
-
-  if (useBrowserless && browserlessApiKey && browserlessWssUrl) {
-    onLog(`🔌 Connecting to remote browser at ${browserlessWssUrl}...`);
-    const endpoint = `${browserlessWssUrl}?token=${browserlessApiKey}`;
-    
-    // +++ FIX: Add a timeout to the connection to prevent indefinite hanging +++
-    const browser = await chromium.connect(endpoint, { timeout: 30000 }); // 30-second timeout
-    
-    browserToClose = browser; 
-    context = await browser.newContext({
-      viewport: screenSize || { width: 1280, height: 720 },
-      userAgent: userAgent,
-    });
-  } else {
-    onLog(`🚀 Launching local browser with persistent session from: ${USER_DATA_DIR}`);
-    context = await chromium.launchPersistentContext(USER_DATA_DIR, {
+  onLog(`🚀 Launching browser with persistent session from: ${USER_DATA_DIR}`);
+  const context = await chromium.launchPersistentContext(USER_DATA_DIR, {
       headless: false,
+      // +++ CHANGE: Use dynamic screen size or a safe default, instead of hardcoded 1920x1080 +++
       viewport: screenSize || { width: 1280, height: 720 },
-      userAgent: userAgent,
-    });
-  }
+      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+  });
   
   const page = context.pages().length > 0 ? context.pages()[0] : await context.newPage();
   
@@ -90,6 +70,7 @@ async function runAutonomousAgent(startUrl, taskSummary, plan, onLog, agentContr
   onLog(`📊 Trace file will be saved to: ${tracePath}`);
 
   const originalGoal = taskSummary;
+  let browser = context.browser();
 
   let currentPlan = plan;
   let currentStepIndex = 0;
@@ -254,14 +235,11 @@ async function runAutonomousAgent(startUrl, taskSummary, plan, onLog, agentContr
     throw err;
   } finally {
     onLog('🔌 Closing browser...');
-    if (context) {
+    if (browser && browser.isConnected()) {
         await context.tracing.stop({ path: tracePath });
         onLog(`📊 Trace file saved. To view it, drag ${tracePath} into https://trace.playwright.dev/`);
-        await context.close();
     }
-    if (browserToClose) {
-        await browserToClose.close();
-    }
+    await context.close();
   }
 }
 
