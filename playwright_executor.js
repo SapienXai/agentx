@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const { chromium } = require('playwright');
 const sharp = require('sharp');
-const { decideNextAction } = require('./agent_api.js'); 
+const { decideNextAction, summarizeText } = require('./agent_api.js'); // Import summarizeText
 
 const MAX_AGENT_STEPS = 25;
 const MAX_ACTION_HISTORY = 10;
@@ -12,21 +12,29 @@ const MAX_ACTION_HISTORY = 10;
 const CREDENTIALS_PATH = path.join(__dirname, 'credential_store.json');
 const USER_DATA_DIR = path.join(__dirname, 'playwright_session_data');
 
+// +++ MODIFIED: This function is now more selective to reduce token usage +++
 async function getInteractiveElements(page) {
     await page.evaluate(() => {
         document.querySelectorAll('[data-bx-id]').forEach(el => el.removeAttribute('data-bx-id'));
     });
     const elements = await page.evaluate(() => {
+        // Focus on elements that are clearly interactive
         const selectors = [
             'a[href]', 'button', 'input[type="button"]', 'input[type="submit"]',
             'input[type="text"]', 'input[type="search"]', 'input[type="email"]', 'input[type="password"]', 'textarea',
-            '[onclick]', '[role="button"]', '[role="link"]', '[role="tab"]', '[role="checkbox"]'
+            '[role="button"]', '[role="link"]', '[role="tab"]', '[role="checkbox"]', '[role="option"]', '[role="menuitem"]',
+            'select', '[onclick]'
         ];
-        const allInteractive = Array.from(document.querySelectorAll(selectors.join(', ')));
+        const interactiveElements = Array.from(document.querySelectorAll(selectors.join(', ')));
+
+        // We also want to label headings and main content areas for scraping, but not every single text element
+        const contentElements = Array.from(document.querySelectorAll('h1, h2, h3, h4, main, article, section, [role="main"]'));
+
+        const allElements = [...interactiveElements, ...contentElements];
 
         const uniqueVisibleElements = [];
         const seenElements = new Set();
-        allInteractive.forEach(el => {
+        allElements.forEach(el => {
             const rect = el.getBoundingClientRect();
             if (rect.width > 0 && rect.height > 0 && !seenElements.has(el)) {
                 uniqueVisibleElements.push(el);
@@ -42,7 +50,7 @@ async function getInteractiveElements(page) {
                 bx_id: id,
                 x: rect.left,
                 y: rect.top,
-                text: el.innerText.trim().slice(0, 100) || el.ariaLabel || el.placeholder || '',
+                text: el.innerText.trim().slice(0, 150) || el.ariaLabel || el.placeholder || '',
                 tag: el.tagName.toLowerCase(),
                 role: el.getAttribute('role') || 'n/a'
             };
@@ -102,6 +110,8 @@ async function runAutonomousAgent(userGoal, onLog, agentControl, screenSize, pro
   onLog(`📊 Trace file will be saved to: ${tracePath}`);
   
   let actionHistory = [];
+  let lastActionResult = null;
+  let fullScrapedText = null; // Store full text for summarization
 
   try {
     for (let i = 0; i < MAX_AGENT_STEPS; i++) {
@@ -123,9 +133,16 @@ async function runAutonomousAgent(userGoal, onLog, agentControl, screenSize, pro
         const annotatedScreenshot = await annotateScreenshot(rawScreenshot, pageElements);
         const screenshotBase64 = annotatedScreenshot.toString('base64');
         
+        // +++ Truncate the last action result before sending to AI to save tokens +++
+        let truncatedResult = lastActionResult;
+        if (truncatedResult && truncatedResult.length > 500) {
+            truncatedResult = truncatedResult.slice(0, 500) + '... [truncated]';
+        }
+        
         const command = await decideNextAction(
             userGoal,
             actionHistory,
+            truncatedResult, // Pass the potentially truncated result
             currentURL,
             structureString,
             screenshotBase64,
@@ -133,6 +150,8 @@ async function runAutonomousAgent(userGoal, onLog, agentControl, screenSize, pro
             onLog
         );
       
+        lastActionResult = null; // Reset after each decision
+
         if (command.thought) onLog(`🧠 Agent Thought: ${command.thought}`);
         actionHistory.push(command);
         if (actionHistory.length > MAX_ACTION_HISTORY) actionHistory.shift();
@@ -160,25 +179,30 @@ async function runAutonomousAgent(userGoal, onLog, agentControl, screenSize, pro
                     window.scrollBy(0, dir === 'down' ? window.innerHeight : -window.innerHeight);
                 }, command.direction);
                 break;
+            case 'scrape_text':
+                 onLog(`▶️ Action: Scraping text from element ${command.bx_id}`);
+                 const scrapedText = await page.locator(`[data-bx-id="${command.bx_id}"]`).innerText();
+                 fullScrapedText = scrapedText; // Save the full text
+                 lastActionResult = scrapedText; // This will be truncated for the next prompt
+                 onLog(`   ... Scraped Text: "${scrapedText.slice(0, 100)}..."`);
+                 break;
+            case 'summarize': // +++ NEW ACTION HANDLER +++
+                 onLog(`▶️ Action: Summarizing text from element ${command.bx_id}`);
+                 const textToSummarize = await page.locator(`[data-bx-id="${command.bx_id}"]`).innerText();
+                 onLog(`   ... Text is ${textToSummarize.length} characters long. Summarizing...`);
+                 const summary = await summarizeText(textToSummarize, userGoal);
+                 lastActionResult = summary; // The summary becomes the result for the next step
+                 onLog(`   ... Summary: "${summary.slice(0, 150)}..."`);
+                 break;
             case 'wait':
                 onLog(`⏸️ Action: Wait. Reason: ${command.reason}`);
-                // If the wait is for a CAPTCHA, we need user intervention.
-                if (command.reason && command.reason.toLowerCase().includes('captcha')) {
-                    onLog('🟡 Please complete the CAPTCHA in the browser. Agent is waiting for navigation...');
-                    await page.waitForNavigation({ timeout: 0, waitUntil: 'domcontentloaded' }).catch(() => {
-                        onLog("User likely solved CAPTCHA without navigation. Continuing...");
-                    });
-                } else {
-                    // Generic wait
-                    await sleep(3000);
-                }
+                await sleep(3000);
                 onLog('✅ Resuming agent...');
                 break;
             case 'finish':
                 onLog(`🎉 GOAL ACHIEVED! Summary: ${command.summary}`);
-                // Add a final log to the UI
                 onLog(`✅ Agent finished successfully!`);
-                return; // Exit the loop and finish successfully
+                return;
             default:
                 throw new Error(`Unknown or invalid command action: ${command.action}`);
         }
