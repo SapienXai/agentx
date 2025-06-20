@@ -9,7 +9,7 @@ async function composePost(postDescription, onLog = console.log) {
     const userMessage = `Please write a social media post based on this description: "${postDescription}"`;
     try {
          const response = await axios.post("https://api.openai.com/v1/chat/completions", {
-            model: "gpt-4o",
+            model: "gpt-4o-mini",
             messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userMessage }],
             max_tokens: 280,
         }, { headers: { "Authorization": `Bearer ${OPENAI_API_KEY}` } });
@@ -129,7 +129,7 @@ ${pageStructure}
 
     try {
         const response = await axios.post("https://api.openai.com/v1/chat/completions", {
-            model: "gpt-4o",
+            model: "gpt-4o-mini",
             messages: messages,
             max_tokens: 500,
             response_format: { type: "json_object" }
