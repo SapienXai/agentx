@@ -53,12 +53,11 @@ async function getPageStructure(page) {
     };
 }
 
-// +++ CHANGE: Added screenSize parameter +++
-async function runAutonomousAgent(startUrl, taskSummary, plan, onLog, agentControl, screenSize) {
+// +++ MODIFIED: Added promptForCredentials parameter to the function signature +++
+async function runAutonomousAgent(startUrl, taskSummary, plan, onLog, agentControl, screenSize, promptForCredentials) {
   onLog(`🚀 Launching browser with persistent session from: ${USER_DATA_DIR}`);
   const context = await chromium.launchPersistentContext(USER_DATA_DIR, {
       headless: false,
-      // +++ CHANGE: Use dynamic screen size or a safe default, instead of hardcoded 1920x1080 +++
       viewport: screenSize || { width: 1280, height: 720 },
       userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
   });
@@ -146,6 +145,26 @@ async function runAutonomousAgent(startUrl, taskSummary, plan, onLog, agentContr
           await page.goto(startUrl, { waitUntil: 'domcontentloaded' });
           actionHistory = [];
           break;
+        }
+
+        // +++ NEW: Handler for credential requests +++
+        case 'request_credentials': {
+            onLog(`⏸️ Action: Agent requires credentials. Reason: ${command.reason}`);
+            onLog('🟡 Please provide the credentials in the main application window.');
+            const urlObject = new URL(page.url());
+            const domain = urlObject.hostname.replace('www.', '');
+
+            try {
+                // This function is passed from main.js and triggers the UI prompt via IPC
+                await promptForCredentials(domain); 
+                onLog('✅ Credentials received. Resuming agent...');
+                actionHistory = []; // Clear history after this interruption
+                continue; // Re-evaluate the page, now that credentials might be available
+            } catch (e) {
+                // This catch block runs if the user cancels the prompt in the UI
+                onLog(`❌ User canceled credential entry. Stopping agent. Error: ${e.message}`);
+                throw new Error('User canceled credential entry.');
+            }
         }
 
         case 'type':

@@ -8,7 +8,7 @@ if (!process.env.OPENAI_API_KEY) {
     process.exit(1);
 }
 
-const { app, BrowserWindow, screen } = require('electron'); // +++ Added 'screen'
+const { app, BrowserWindow, screen, ipcMain } = require('electron'); // +++ MODIFIED
 const path = require('path');
 const http = require('http');
 const express = require('express');
@@ -23,6 +23,7 @@ const { runAutonomousAgent } = require('./playwright_executor.js');
 const PORT = process.env.PORT || 3000;
 
 const SCHEDULED_TASKS_PATH = path.join(__dirname, 'scheduled_tasks.json');
+const CREDENTIALS_PATH = path.join(__dirname, 'credential_store.json'); // +++ NEW
 let activeSchedules = {};
 
 let taskQueue = [];
@@ -43,11 +44,10 @@ function getLocalIpAddress() {
     return 'localhost';
 }
 
-function createWindow() {
+function createWindow(win) { // +++ MODIFIED to accept win
     const localIp = getLocalIpAddress();
     const serverUrl = `http://${localIp}:${PORT}`;
     
-    // +++ NEW: Get the primary screen's available work area size +++
     const primaryDisplay = screen.getPrimaryDisplay();
     const screenSize = primaryDisplay.workAreaSize;
     console.log(`🖥️  Detected screen work area: ${screenSize.width}x${screenSize.height}`);
@@ -73,6 +73,21 @@ function createWindow() {
             }
         }
     }
+
+    // +++ NEW: Function to prompt for credentials via IPC
+    const promptForCredentials = (domain) => {
+        return new Promise((resolve, reject) => {
+            win.webContents.send('show-credentials-modal', { domain });
+
+            ipcMain.once('credentials-submitted', (event, {success, error}) => {
+                if (success) {
+                    resolve();
+                } else {
+                    reject(new Error(error || 'User canceled credential entry.'));
+                }
+            });
+        });
+    };
 
     function scheduleTask(task) {
         const { id: taskId, plan } = task;
@@ -159,15 +174,22 @@ function createWindow() {
             agentControls[taskId] = { stop: false, isRunning: true };
             
             taskLogger(`▶️ Agent starting execution for: "${plan.taskSummary}"`);
-            // +++ CHANGE: Pass the detected screen size to the agent executor +++
-            await runAutonomousAgent(plan.targetURL, plan.taskSummary, plan.plan, taskLogger, agentControls[taskId], screenSize);
+            await runAutonomousAgent(
+                plan.targetURL, 
+                plan.taskSummary, 
+                plan.plan, 
+                taskLogger, 
+                agentControls[taskId], 
+                screenSize, 
+                promptForCredentials // +++ MODIFIED
+            );
             taskLogger('✅ Agent finished successfully!');
             broadcast(`${taskId}::TASK_STATUS_UPDATE::completed`);
             
         } catch (error) {
-            const isUserStop = error.message.includes("Agent stopped by user");
+            const isUserStop = error.message.includes("Agent stopped by user") || error.message.includes("User canceled");
             if (isUserStop) {
-                taskLogger('⏹️ Agent execution has been stopped by the user.');
+                taskLogger(`⏹️ Agent execution has been stopped by the user. Reason: ${error.message}`);
                 broadcast(`${taskId}::TASK_STATUS_UPDATE::stopped`);
             } else {
                  taskLogger(`🚨 FINAL ERROR: ${error.message}`);
@@ -277,15 +299,43 @@ function createWindow() {
         }
     });
 
-    server.listen(PORT, () => {
+    server.listen(PORT, "0.0.0.0", () => { // Modified to listen on all interfaces
         console.log(`Server is running at ${serverUrl}`);
         loadAndRescheduleTasks();
-        const win = new BrowserWindow({ width: 600, height: 800, webPreferences: { preload: path.join(__dirname, 'preload.js'), }, });
-        win.loadURL(`http://localhost:${PORT}`);
-        win.webContents.once('dom-ready', () => { console.log('--- Welcome to BrowserX Agent ---'); });
     });
 }
 
-app.whenReady().then(createWindow);
+function main() {
+    const win = new BrowserWindow({ 
+        width: 600, 
+        height: 800, 
+        webPreferences: { 
+            preload: path.join(__dirname, 'preload.js'), 
+        }, 
+    });
+
+    // +++ NEW: IPC Handler for saving credentials
+    ipcMain.handle('save-credentials', (event, { domain, username, password }) => {
+        console.log(`Received credentials for ${domain}`);
+        let store = {};
+        if (fs.existsSync(CREDENTIALS_PATH)) {
+            try {
+                store = JSON.parse(fs.readFileSync(CREDENTIALS_PATH, 'utf-8'));
+            } catch (e) {
+                console.error("Error reading credential store, will overwrite.", e);
+            }
+        }
+        store[domain] = { username, password };
+        fs.writeFileSync(CREDENTIALS_PATH, JSON.stringify(store, null, 2));
+        console.log(`✅ Credentials for ${domain} saved.`);
+        return { success: true };
+    });
+    
+    createWindow(win); // Pass window object
+    win.loadURL(`http://localhost:${PORT}`);
+    win.webContents.once('dom-ready', () => { console.log('--- Welcome to BrowserX Agent ---'); });
+}
+
+app.whenReady().then(main);
 
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });

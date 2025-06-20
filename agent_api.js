@@ -17,38 +17,45 @@ async function createPlan(userGoal, onLog = console.log) {
             const systemPrompt = `You are a planning agent. Your task is to analyze a user's goal and generate a plan in a specific JSON format.
 
 # CORE TASK
-1.  Identify the main website, brand, or company to search for.
-2.  Summarize the user's ultimate goal into a short task summary.
-3.  **Create a granular, step-by-step plan to achieve the goal.** Each step should be a single, clear, atomic action (e.g., 'click a button', 'type in a field'). Avoid ambiguous steps.
+1.  **Identify the main subject or 'searchTerm'** from the user's goal (e.g., a website, brand, or topic).
+2.  **Create a granular, step-by-step plan.** Each step must be a single, clear, atomic action.
+3.  Summarize the user's ultimate goal into a short 'taskSummary'.
 4.  Analyze if the goal is a recurring task.
 
+# HOW TO START A TASK (VERY IMPORTANT)
+-   **If the goal requires a web search to find a website, your plan MUST start with these specific steps:**
+    1.  Navigate to "https://www.google.com".
+    2.  Type the 'searchTerm' into the search bar.
+    3.  Click the "Google Search" button.
+    4.  Click the most relevant search result link to navigate to the target website.
+-   **If the goal provides a direct URL**, the first step should be to navigate to that URL.
+
 # RESPONSE FORMAT
-Your output MUST be a single, valid JSON object.
-The JSON object must contain: "searchTerm", "taskSummary", "plan", "isRecurring", "schedule", and "cron".
-The "plan" key MUST be an array of objects, where each object has a single key "step" with a string value.
+Your output MUST be a single, valid JSON object with the keys: "searchTerm", "taskSummary", "plan", "isRecurring", "schedule", "cron", and "targetURL".
 
-# CRON FORMAT
-- Use standard 5-field cron syntax.
-- If the task is not recurring, "schedule" and "cron" MUST be empty strings ("").
+# KEY-SPECIFIC RULES
+-   **"plan"**: MUST be an array of objects, where each object has a single key "step" with a string value.
+-   **"searchTerm"**: The primary keyword(s) to search for. If no search is needed, this can be the name of the website.
+-   **"targetURL"**: The initial URL the browser should navigate to. For a web search, this MUST be "https://www.google.com". For direct navigation, it's the URL from the user's goal.
+-   **"cron" / "schedule"**: Must be empty strings ("") if "isRecurring" is false. Use standard 5-field cron syntax if true.
 
-# JSON STRUCTURE EXAMPLE (GOOD, GRANULAR PLAN):
+# EXAMPLE (for a goal requiring a search)
+// User Goal: "Find the latest news on the 'AI' subreddit"
 {
-  "searchTerm": "Twitter",
-  "taskSummary": "Post a tweet about a new product",
+  "searchTerm": "reddit AI",
+  "taskSummary": "Find the latest news on the 'AI' subreddit",
   "plan": [
-    { "step": "Navigate to the main page and sign in if necessary." },
-    { "step": "Click the 'Post' or 'Tweet' button to open the composer modal." },
-    { "step": "Type the new product announcement into the main text area." },
-    { "step": "Click the final 'Post' or 'Tweet' button to publish the content." }
+    { "step": "Navigate to https://www.google.com" },
+    { "step": "Type 'reddit AI' into the search bar." },
+    { "step": "Click the 'Google Search' button." },
+    { "step": "Click the link for the 'r/artificial' subreddit in the search results." },
+    { "step": "Sort the posts by 'New' to find the latest news." }
   ],
   "isRecurring": false,
   "schedule": "",
-  "cron": ""
+  "cron": "",
+  "targetURL": "https://www.google.com"
 }
-
-# EXAMPLE OF A BAD, AMBIGUOUS PLAN (DO NOT DO THIS):
-// { "plan": [{ "step": "Find the 'Compose Tweet' or 'Post' button and click it." }] }
-// This is bad because "click it" is ambiguous. It could be the button to open the composer or the button to submit the post. Be specific.
 
 ${selfCorrectionPrompt}`;
 
@@ -59,7 +66,7 @@ ${selfCorrectionPrompt}`;
             }, { headers: { "Authorization": `Bearer ${OPENAI_API_KEY}` } });
 
             const plan = JSON.parse(response.data.choices[0].message.content);
-            const requiredKeys = ["searchTerm", "taskSummary", "plan", "isRecurring", "schedule", "cron"];
+            const requiredKeys = ["searchTerm", "taskSummary", "plan", "isRecurring", "schedule", "cron", "targetURL"]; // Added targetURL
             for (const key of requiredKeys) {
                 if (plan[key] === undefined) {
                      throw new Error(`Invalid plan schema: The generated JSON is missing the required key '${key}'.`);
@@ -71,8 +78,6 @@ ${selfCorrectionPrompt}`;
             if (typeof plan.isRecurring !== 'boolean') {
                  throw new Error(`Invalid plan schema: 'isRecurring' must be a boolean.`);
             }
-            
-            plan.targetURL = `https://www.google.com/search?q=${encodeURIComponent(plan.searchTerm)}`;
             
             return plan;
         } catch (error) {
@@ -87,33 +92,35 @@ ${selfCorrectionPrompt}`;
 async function decideNextBrowserAction(goal, fullPlan, currentSubTask, currentURL, pageStructure, screenshotBase64, credentials, actionHistory = [], onLog = console.log) {
     onLog(`🧠 Agent is thinking about the next action (using Structure & Vision)...`);
     try {
-        const systemPrompt = `You are an expert web agent. Your task is to achieve a sub-task which is part of a larger plan by examining a screenshot and a structured representation of the webpage.
+        const systemPrompt = `You are an expert web agent. Your task is to achieve a sub-task by examining a webpage.
 
 # CORE LOGIC & RULES
-1.  **REASONING:** First, in the "thought" field, write down your step-by-step reasoning. Look at the **Full Plan** to understand the context of the **Current Sub-Task**.
-2.  **ACTION:** Based on your reasoning, choose **one** action to perform from the list below.
-3.  **SUB-TASK COMPLETION:** If you believe you have successfully completed the Current Sub-Task, you MUST use the \`finish_step\` action. This will move you to the next step in the plan.
-4.  **SELECTOR HIERARCHY:** ALWAYS prefer \`testid\` if available.
+1.  **COOKIE CONSENT:** If you see a cookie consent banner, your absolute first priority is to click the button to accept it.
+2.  **LOGIN:** If the task requires a login and you see a login form BUT you have NO credentials, you MUST use the \`request_credentials\` action. Do not try to guess credentials.
+3.  **REASONING:** After handling cookies and logins, write your step-by-step reasoning in the "thought" field.
+4.  **ACTION:** Choose **one** action from the list.
+5.  **SUB-TASK COMPLETION:** If the Current Sub-Task is complete, you MUST use the \`finish_step\` action.
+6.  **SELECTOR HIERARCHY:** ALWAYS prefer \`testid\` if available.
 
 # AVAILABLE ACTIONS (JSON FORMAT ONLY)
 
 *   **\`click\` / \`type\`**: To interact with an element.
-    -   \`{"thought": "...", "action": "click", "selector": {"testid": "SideNav_NewTweet_Button"}}\`
+    -   \`{"thought": "...", "action": "click", "selector": {"testid": "login-button"}}\`
 
-*   **\`finish_step\`**: Use this when the **Current Sub-Task** is complete.
-    -   \`{"thought": "I have successfully clicked the button to open the composer, which completes this sub-task. The next step is to type the content.", "action": "finish_step"}\`
+*   **\`request_credentials\`**: Use this when you need to log in but have no credentials.
+    -   \`{"thought": "The task is to post a comment, which requires an account. I am on the login page and have no credentials.", "action": "request_credentials", "reason": "Login required to post a comment."}\`
 
-*   **\`think\`**: Use this if the page is visibly loading or an element you need isn't there yet.
-    -   \`{"thought": "I've just navigated. I will think for a moment to let the page stabilize.", "action": "think"}\`
+*   **\`finish_step\`**: Use this when the Current Sub-Task is complete.
+    -   \`{"thought": "I have successfully typed in the username. The next step is the password.", "action": "finish_step"}\`
 
-*   **\`wait\`**: Use this ONLY for HUMAN intervention (CAPTCHA, login without credentials).
-    -   \`{"thought": "I am blocked by a CAPTCHA which I cannot solve.", "action": "wait", "reason": "Waiting for user to solve CAPTCHA."}\`
+*   **\`wait\`**: Use this ONLY for HUMAN intervention you cannot solve (e.g., CAPTCHA).
+    -   \`{"thought": "I am blocked by a CAPTCHA.", "action": "wait", "reason": "Waiting for user to solve CAPTCHA."}\`
 
-*   **\`finish\`**: When the **Overall Goal** has been successfully completed (i.e., the last step of the plan is done).
-    -   \`{"thought": "I've clicked the final post button and can see a success message. The entire task is complete.", "action": "finish", "summary": "Successfully posted the update."}\`
+*   **\`finish\`**: When the **Overall Goal** is successfully completed.
+    -   \`{"thought": "I've clicked the final post button and can see the post. The entire task is complete.", "action": "finish", "summary": "Successfully posted the update."}\`
 
 *   **\`replan\`**: If the current plan is failing or you are on an error page.
-    -   \`{"thought": "This is a 404 page. The current plan is blocked.", "action": "replan", "reason": "Landed on a 404 page."}\`
+    -   \`{"thought": "This is a 404 page. The plan is blocked.", "action": "replan", "reason": "Landed on a 404 page."}\`
 `;
 
         let historyLog = "No history yet.";

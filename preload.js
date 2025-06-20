@@ -1,13 +1,15 @@
 // preload.js
+const { contextBridge, ipcRenderer } = require('electron');
 
-// The preload script is no longer used for exposing Node.js APIs to the renderer.
-// Communication is now handled via standard web APIs (HTTP Fetch and WebSockets)
-// served by the Express server in main.js.
-// We keep this file to maintain the principle of contextIsolation.
+// Expose protected methods that allow the renderer process to use
+// the ipcRenderer without exposing the entire object.
+contextBridge.exposeInMainWorld('electronAPI', {
+  // Renderer to Main (and wait for a response)
+  saveCredentials: (data) => ipcRenderer.invoke('save-credentials', data),
 
-const { contextBridge } = require('electron');
-
-// You could expose non-sensitive, desktop-only helpers here if needed in the future.
-contextBridge.exposeInMainWorld('electron', {
-  // Example: isDesktop: true
+  // Main to Renderer
+  onShowCredentialsModal: (callback) => ipcRenderer.on('show-credentials-modal', (_event, value) => callback(value)),
+  
+  // Renderer to Main (fire-and-forget, after user submits)
+  credentialsSubmitted: (data) => ipcRenderer.send('credentials-submitted', data)
 });

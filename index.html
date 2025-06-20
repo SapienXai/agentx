@@ -73,6 +73,20 @@
         </div>
     </div>
 
+    <!-- Credentials Modal (New) -->
+    <div id="credentials-modal" class="modal-overlay d-none">
+        <div class="modal-content">
+            <button id="close-credentials-modal-button" class="close-btn">×</button>
+            <h3>Agent Needs Credentials</h3>
+            <p class="text-muted">The agent needs to log in to <strong id="credential-domain">...</strong> to continue.</p>
+            <form id="credentials-form" class="credentials-form">
+                <input type="text" id="username-input" placeholder="Username or Email" required>
+                <input type="password" id="password-input" placeholder="Password" required>
+                <button type="submit" class="primary">Save & Continue</button>
+            </form>
+        </div>
+    </div>
+
 
     <script src="./progress.js"></script>
     <script src="./renderer.js"></script>

@@ -2,6 +2,7 @@
 
 // --- STATE ---
 let taskHistory = [];
+let activeCredentialRequest = null; // To store {domain, resolve} for the active request
 
 // --- SELECTORS ---
 const goalInput = document.getElementById('goal-input');
@@ -14,13 +15,21 @@ const noTasksMessage = document.getElementById('no-tasks-message');
 const tabLinks = document.querySelectorAll('.tab-link');
 const taskListsWrapper = document.getElementById('task-lists-wrapper');
 
-// Modal Selectors
+// QR Modal Selectors
 const qrModal = document.getElementById('qr-modal');
 const connectButton = document.getElementById('connect-button');
 const closeModalButton = document.getElementById('close-modal-button');
 const qrCodeImage = document.getElementById('qr-code-image');
 const qrSpinner = document.getElementById('qr-spinner');
 const connectUrl = document.getElementById('connect-url');
+
+// Credentials Modal Selectors (New)
+const credentialsModal = document.getElementById('credentials-modal');
+const closeCredentialsModalButton = document.getElementById('close-credentials-modal-button');
+const credentialsForm = document.getElementById('credentials-form');
+const credentialDomain = document.getElementById('credential-domain');
+const usernameInput = document.getElementById('username-input');
+const passwordInput = document.getElementById('password-input');
 
 // --- WEBSOCKET ---
 const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -85,7 +94,7 @@ socket.onmessage = (event) => {
 socket.onopen = () => console.log('WebSocket connection established.');
 socket.onerror = (error) => console.error('WebSocket Error:', error);
 
-// --- UI RENDERING ---
+// --- UI RENDERING (No changes here, but included for completeness) ---
 
 const getStatusPill = (status) => {
     if (status === 'running') return `<div class="status-pill status-running"><span class="running-indicator"></span>Running</div>`;
@@ -142,7 +151,6 @@ const getTaskActions = (task) => {
 const getTaskDetails = (task) => {
     let content = '';
     if (task.plan && task.status !== 'completed') {
-        // +++ CHANGE: Display a list of steps instead of a single strategy string +++
         const planSteps = task.plan.plan.map(p => `<li>${p.step}</li>`).join('');
         content += `<h4>Proposed Plan</h4><div class="plan-details">
             ${task.plan.isRecurring ? `<p><strong>Schedule:</strong> <i class="bi bi-clock-history" title="Recurring task"></i> ${task.plan.schedule}</p>` : ''}
@@ -156,7 +164,7 @@ const getTaskDetails = (task) => {
         content += `<h4>Agent Log</h4><pre class="status-log">${task.log}</pre>`;
     }
     
-    if (task.isRecurring) { // Show run count for original scheduled tasks
+    if (task.isRecurring) {
          content += `<div class="run-count-info">
             <i class="bi bi-arrow-repeat"></i>
             <span>Run count: <strong>${task.runCount || 0}</strong></span>
@@ -348,6 +356,8 @@ tabLinks.forEach(tab => {
 });
 
 // --- MODAL LOGIC ---
+
+// QR Code Modal
 let qrCodeFetched = false;
 const fetchQrCode = async () => {
     if (qrCodeFetched) return;
@@ -386,6 +396,40 @@ qrModal.addEventListener('click', (e) => {
     }
 });
 
+// Credentials Modal (New Logic)
+window.electronAPI.onShowCredentialsModal((data) => {
+    activeCredentialRequest = data;
+    credentialDomain.textContent = data.domain;
+    credentialsModal.classList.remove('d-none');
+    usernameInput.focus();
+});
+
+credentialsForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!activeCredentialRequest) return;
+
+    const credentials = {
+        domain: activeCredentialRequest.domain,
+        username: usernameInput.value,
+        password: passwordInput.value,
+    };
+    
+    await window.electronAPI.saveCredentials(credentials);
+    window.electronAPI.credentialsSubmitted({success: true});
+    
+    credentialsModal.classList.add('d-none');
+    credentialsForm.reset();
+    activeCredentialRequest = null;
+});
+
+closeCredentialsModalButton.addEventListener('click', () => {
+    credentialsModal.classList.add('d-none');
+    if (activeCredentialRequest) {
+        window.electronAPI.credentialsSubmitted({success: false, error: 'User canceled.'});
+        activeCredentialRequest = null;
+    }
+});
+
 // --- ROBUST INITIALIZATION ---
 document.addEventListener('DOMContentLoaded', () => {
     const storedHistory = localStorage.getItem('taskHistory');
@@ -393,26 +437,22 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const loadedTasks = JSON.parse(storedHistory);
             taskHistory = loadedTasks.map(task => {
-                // On any reload, the backend queue is ALWAYS empty.
-                // Therefore, any task that was running or queued is now considered stopped.
                 if (['running', 'queued'].includes(task.status)) {
                     task.status = 'stopped';
                     task.log = (task.log || '') + `\n--- Task stopped due to application restart. ---\n`;
                     task.progress = null;
                 }
                 
-                // Pending tasks that were never confirmed are just removed.
                 if (task.status === 'pending') {
-                    return null; // This will be filtered out later.
+                    return null;
                 }
 
-                // Scheduled tasks remain, as the backend will re-awaken them.
                 if (task.status === 'scheduled') {
                     task.log = (task.log || '') + `\n--- Application restarted. Schedule remains active. ---\n`;
                 }
 
                 return task;
-            }).filter(Boolean); // Filter out any null tasks (the pending ones)
+            }).filter(Boolean);
 
         } catch (e) { 
             console.error("Failed to parse task history:", e); 
