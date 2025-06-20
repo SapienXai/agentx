@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const { chromium } = require('playwright');
 const sharp = require('sharp');
-const { decideNextAction, summarizeText } = require('./agent_api.js'); // Import summarizeText
+const { decideNextAction, summarizeText, composePost } = require('./agent_api.js');
 
 const MAX_AGENT_STEPS = 25;
 const MAX_ACTION_HISTORY = 10;
@@ -12,13 +12,11 @@ const MAX_ACTION_HISTORY = 10;
 const CREDENTIALS_PATH = path.join(__dirname, 'credential_store.json');
 const USER_DATA_DIR = path.join(__dirname, 'playwright_session_data');
 
-// +++ MODIFIED: This function is now more selective to reduce token usage +++
 async function getInteractiveElements(page) {
     await page.evaluate(() => {
         document.querySelectorAll('[data-bx-id]').forEach(el => el.removeAttribute('data-bx-id'));
     });
     const elements = await page.evaluate(() => {
-        // Focus on elements that are clearly interactive
         const selectors = [
             'a[href]', 'button', 'input[type="button"]', 'input[type="submit"]',
             'input[type="text"]', 'input[type="search"]', 'input[type="email"]', 'input[type="password"]', 'textarea',
@@ -26,10 +24,7 @@ async function getInteractiveElements(page) {
             'select', '[onclick]'
         ];
         const interactiveElements = Array.from(document.querySelectorAll(selectors.join(', ')));
-
-        // We also want to label headings and main content areas for scraping, but not every single text element
         const contentElements = Array.from(document.querySelectorAll('h1, h2, h3, h4, main, article, section, [role="main"]'));
-
         const allElements = [...interactiveElements, ...contentElements];
 
         const uniqueVisibleElements = [];
@@ -111,7 +106,6 @@ async function runAutonomousAgent(userGoal, onLog, agentControl, screenSize, pro
   
   let actionHistory = [];
   let lastActionResult = null;
-  let fullScrapedText = null; // Store full text for summarization
 
   try {
     for (let i = 0; i < MAX_AGENT_STEPS; i++) {
@@ -119,8 +113,6 @@ async function runAutonomousAgent(userGoal, onLog, agentControl, screenSize, pro
       
         onLog(`\n--- Step ${i + 1} / ${MAX_AGENT_STEPS} ---`);
       
-        await sleep(1000);
-
         const currentURL = page.url();
         const credentials = getCredentialsForUrl(currentURL);
         
@@ -133,24 +125,18 @@ async function runAutonomousAgent(userGoal, onLog, agentControl, screenSize, pro
         const annotatedScreenshot = await annotateScreenshot(rawScreenshot, pageElements);
         const screenshotBase64 = annotatedScreenshot.toString('base64');
         
-        // +++ Truncate the last action result before sending to AI to save tokens +++
         let truncatedResult = lastActionResult;
         if (truncatedResult && truncatedResult.length > 500) {
             truncatedResult = truncatedResult.slice(0, 500) + '... [truncated]';
         }
         
         const command = await decideNextAction(
-            userGoal,
-            actionHistory,
-            truncatedResult, // Pass the potentially truncated result
-            currentURL,
-            structureString,
-            screenshotBase64,
-            credentials,
-            onLog
+            userGoal, actionHistory, truncatedResult,
+            currentURL, structureString, screenshotBase64,
+            credentials, onLog
         );
       
-        lastActionResult = null; // Reset after each decision
+        lastActionResult = null;
 
         if (command.thought) onLog(`🧠 Agent Thought: ${command.thought}`);
         actionHistory.push(command);
@@ -159,44 +145,78 @@ async function runAutonomousAgent(userGoal, onLog, agentControl, screenSize, pro
         switch (command.action) {
             case 'navigate':
                 onLog(`▶️ Action: Navigating to ${command.url}`);
-                await page.goto(command.url, { waitUntil: 'domcontentloaded' });
+                await page.goto(command.url, { waitUntil: 'domcontentloaded', timeout: 30000 });
                 break;
             case 'type':
                 onLog(`▶️ Action: Typing into element ${command.bx_id}`);
                 await page.locator(`[data-bx-id="${command.bx_id}"]`).fill(command.text);
                 break;
-            case 'click':
+            case 'compose_text':
+                 onLog(`▶️ Action: Composing text for element ${command.bx_id} with description: "${command.description}"`);
+                 const postContent = await composePost(command.description, onLog);
+                 onLog(`   ... Composed Text: "${postContent}"`);
+                 await page.locator(`[data-bx-id="${command.bx_id}"]`).fill(postContent);
+                 lastActionResult = `Composed and typed post: "${postContent}"`;
+                 break;
+            case 'click': // +++ MODIFIED: Using robust JS click +++
                 onLog(`▶️ Action: Clicking element ${command.bx_id}`);
-                await page.locator(`[data-bx-id="${command.bx_id}"]`).click({timeout: 10000});
+                try {
+                    await page.evaluate(id => {
+                        const element = document.querySelector(`[data-bx-id="${id}"]`);
+                        if (element) {
+                            element.click();
+                        } else {
+                            throw new Error(`Element with bx_id ${id} not found.`);
+                        }
+                    }, command.bx_id);
+                } catch (e) {
+                    onLog(`❌ JS Click failed: ${e.message}`);
+                    // As a fallback, try Playwright's force click
+                    await page.locator(`[data-bx-id="${command.bx_id}"]`).click({ force: true, timeout: 5000 });
+                }
                 break;
             case 'press_enter':
                  onLog(`▶️ Action: Pressing 'Enter' key.`);
                  await page.keyboard.press('Enter');
                  break;
+            case 'press_escape': // +++ NEW ACTION HANDLER +++
+                 onLog(`▶️ Action: Pressing 'Escape' key to close modal.`);
+                 await page.keyboard.press('Escape');
+                 break;
             case 'scroll':
                 onLog(`▶️ Action: Scrolling ${command.direction}.`);
                 await page.evaluate(dir => {
-                    window.scrollBy(0, dir === 'down' ? window.innerHeight : -window.innerHeight);
+                    window.scrollBy(0, dir === 'down' ? window.innerHeight * 0.7 : -window.innerHeight * 0.7);
                 }, command.direction);
                 break;
             case 'scrape_text':
                  onLog(`▶️ Action: Scraping text from element ${command.bx_id}`);
                  const scrapedText = await page.locator(`[data-bx-id="${command.bx_id}"]`).innerText();
-                 fullScrapedText = scrapedText; // Save the full text
-                 lastActionResult = scrapedText; // This will be truncated for the next prompt
+                 lastActionResult = scrapedText;
                  onLog(`   ... Scraped Text: "${scrapedText.slice(0, 100)}..."`);
                  break;
-            case 'summarize': // +++ NEW ACTION HANDLER +++
+            case 'summarize':
                  onLog(`▶️ Action: Summarizing text from element ${command.bx_id}`);
                  const textToSummarize = await page.locator(`[data-bx-id="${command.bx_id}"]`).innerText();
-                 onLog(`   ... Text is ${textToSummarize.length} characters long. Summarizing...`);
                  const summary = await summarizeText(textToSummarize, userGoal);
-                 lastActionResult = summary; // The summary becomes the result for the next step
+                 lastActionResult = summary;
                  onLog(`   ... Summary: "${summary.slice(0, 150)}..."`);
+                 break;
+            case 'request_credentials':
+                 onLog(`⏸️ Action: Agent requires credentials. Reason: ${command.reason}`);
+                 onLog('🟡 Please provide the credentials in the main application window.');
+                 const urlObject = new URL(page.url());
+                 const domain = urlObject.hostname.replace('www.', '');
+                 try {
+                     await promptForCredentials(domain); 
+                     onLog('✅ Credentials received. Resuming agent...');
+                 } catch (e) {
+                     throw new Error('User canceled credential entry.');
+                 }
                  break;
             case 'wait':
                 onLog(`⏸️ Action: Wait. Reason: ${command.reason}`);
-                await sleep(3000);
+                await sleep(5000);
                 onLog('✅ Resuming agent...');
                 break;
             case 'finish':
@@ -206,7 +226,11 @@ async function runAutonomousAgent(userGoal, onLog, agentControl, screenSize, pro
             default:
                 throw new Error(`Unknown or invalid command action: ${command.action}`);
         }
-        await page.waitForLoadState('domcontentloaded', {timeout: 5000}).catch(() => onLog('...Page did not fully reload, continuing.'));
+        
+        onLog("...Waiting for page to stabilize...");
+        await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {
+            onLog("...Network did not become fully idle, but continuing.");
+        });
     }
     throw new Error('Agent reached maximum steps without finishing the goal.');
   } catch (err) {

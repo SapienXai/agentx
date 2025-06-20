@@ -3,25 +3,34 @@
 const axios = require("axios");
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
-// +++ NEW HELPER FUNCTION FOR SUMMARIZATION +++
+async function composePost(postDescription, onLog = console.log) {
+    onLog(`🧠 Composing post based on description: "${postDescription}"`);
+    const systemPrompt = `You are a creative and witty social media copywriter. Your task is to write a post based on a user's description. The post should be concise, engaging, and match the requested tone.`;
+    const userMessage = `Please write a social media post based on this description: "${postDescription}"`;
+    try {
+         const response = await axios.post("https://api.openai.com/v1/chat/completions", {
+            model: "gpt-4o",
+            messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userMessage }],
+            max_tokens: 280,
+        }, { headers: { "Authorization": `Bearer ${OPENAI_API_KEY}` } });
+        return response.data.choices[0].message.content;
+    } catch (error) {
+        onLog(`🚨 Composition failed: ${error.message}`);
+        return "AI agents are coming for your jobs... and they're starting with mine. #AI #JobSearch";
+    }
+}
+
 async function summarizeText(textToSummarize, userGoal, onLog = console.log) {
     onLog(`🧠 Summarizing text for goal: "${userGoal}"`);
     const systemPrompt = `You are a text summarization assistant. A user has provided a large block of text scraped from a website. Your task is to summarize it concisely, focusing ONLY on the information relevant to the user's original goal.`;
-
     const userMessage = `Original Goal: "${userGoal}"\n\nText to Summarize:\n---\n${textToSummarize}`;
-
     try {
          const response = await axios.post("https://api.openai.com/v1/chat/completions", {
-            model: "gpt-4o-mini", // A cheaper model is fine for summarization
-            messages: [
-                { role: "system", content: systemPrompt },
-                { role: "user", content: userMessage }
-            ],
+            model: "gpt-4o-mini",
+            messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userMessage }],
             max_tokens: 1000,
         }, { headers: { "Authorization": `Bearer ${OPENAI_API_KEY}` } });
-
         return response.data.choices[0].message.content;
-
     } catch (error) {
         onLog(`🚨 Summarization failed: ${error.message}`);
         return "Could not summarize the text due to an error.";
@@ -42,49 +51,31 @@ async function decideNextAction(
     
     const systemPrompt = `You are an expert web agent. Your mission is to achieve a user's goal by navigating and interacting with web pages.
 
-# CONTEXT
-You are given the user's goal, a history of your actions, an annotated screenshot of the current page, and a JSON object describing labeled elements. You may also receive the result of your last action (e.g., scraped text), which may be truncated.
+# CORE LOGIC & RULES - YOU MUST FOLLOW THESE IN ORDER
+1.  **RULE #1: HANDLE BLOCKERS & MODALS.** Before anything else, check for overlays. If a login/signup modal, cookie banner, or any other popup is blocking the page, your ONLY priority is to deal with it. This usually means clicking a "Log in", "Accept", or "Close" button. **If you are stuck in a modal you don't understand, use the \`press_escape\` action.**
+2.  **RULE #2: LOGIN IF NECESSARY.** If the goal requires being logged in and you are not, your next priority is to log in.
+3.  **RULE #3: EXECUTE THE GOAL.** Once the page is clear and you are logged in (if needed), proceed with the actions to achieve the \`originalGoal\`.
+4.  **RULE #4: FINISH.** When the goal is verifiably complete, you MUST use the \`finish\` action.
 
-# CORE LOGIC & RULES
-1.  **GOAL-FOCUSED:** Always choose the action that gets you closer to the \`originalGoal\`.
-2.  **CHECK ELEMENT TAGS:** Before you act, check the element's \`tag\` in the JSON.
-    *   **ONLY \`type\` into \`<input>\` or \`<textarea>\` elements.**
-    *   Do NOT try to \`type\` into a \`<button>\` or \`<a>\` tag.
-3.  **USE \`bx_id\`:** You MUST use the \`bx_id\` from the screenshot and JSON to click, type or scrape.
-4.  **DEALING WITH LARGE TEXT:**
-    *   If you need to understand a large article to find specific information, first \`scrape_text\` on the main content area.
-    *   Then, use the \`summarize\` action on the same element to get a concise summary focused on the goal.
-    *   Finally, use the summary to \`finish\` the task.
-5.  **FINISHING:** After you have found the information requested in the goal, you MUST use the \`finish\` action.
+# WORKFLOW EXAMPLES
+*   **Posting on Twitter:** 1. See login popup -> Click 'Sign In' (\`click\`). 2. On login page -> Use \`request_credentials\`. 3. On timeline -> Find 'What's happening?' text area (\`compose_text\`). 4. Click the now-enabled 'Post' button (\`click\`). 5. See post on timeline -> \`finish\`.
+*   **Stuck on a page:** 1. Accidentally clicked 'Messages'. 2. A 'New Message' modal appears, blocking the 'Home' button. 3. Realize I'm stuck. -> Use \`press_escape\` to close the modal. 4. Now I can see the 'Home' button and click it.
 
 # AVAILABLE ACTIONS (JSON FORMAT ONLY)
 
 *   **\`navigate\`**: To go to a specific URL.
-    -   \`{"thought": "I need to start at Google.", "action": "navigate", "url": "https://www.google.com"}\`
-
 *   **\`click\`**: To click a labeled element.
-    -   \`{"thought": "The search icon is labeled bx-10. I will click it to reveal the search bar.", "action": "click", "bx_id": "bx-10"}\`
-
-*   **\`type\`**: To type into a labeled text field. **Confirm it's an input/textarea first.**
-    -   \`{"thought": "The element bx-6 is an input field. I will type 'COLLECT' into it.", "action": "type", "bx_id": "bx-6", "text": "COLLECT"}\`
-
-*   **\`press_enter\`**: To simulate pressing the Enter/Return key.
-    -   \`{"thought": "I have typed the search query. Now I will press Enter to submit.", "action": "press_enter"}\`
-    
-*   **\`scrape_text\`**: To extract the full text from a single, large element (like an article body).
-    -   \`{"thought": "The main article content is labeled bx-55. I will scrape its text.", "action": "scrape_text", "bx_id": "bx-55"}\`
-
-*   **\`summarize\`**: To process a large block of text you have just scraped. Use this on the same element you just scraped.
-    -   \`{"thought": "I have scraped the article text from bx-55. Now I will summarize it to find the key historical facts.", "action": "summarize", "bx_id": "bx-55"}\`
-
+*   **\`type\`**: To type simple text into an input field.
+*   **\`compose_text\`**: To generate creative content and type it into a field.
+*   **\`press_enter\`**: To simulate pressing the Enter key.
+*   **\`press_escape\`**: To simulate pressing the Escape key, used to close modals or popups.
+    - \`{"thought": "I seem to be stuck in a popup dialog. I will press escape to try and close it.", "action": "press_escape"}\`
+*   **\`scrape_text\`**: To extract text from an element.
+*   **\`summarize\`**: To process a large block of scraped text.
+*   **\`request_credentials\`**: Use this on a login page if you don't have credentials.
 *   **\`finish\`**: Use this ONLY when the original goal is fully complete.
-    -   \`{"thought": "I have the summary of the history of Turkey. The goal is complete.", "action": "finish", "summary": "The history of Turkey involves the Ottoman Empire, its dissolution after WWI, and the establishment of the modern republic under Atatürk in 1923."}\`
-
-*   **\`scroll\`**: To scroll the page down to see more content.
-    -   \`{"thought": "I can't see the price, so I will scroll down.", "action": "scroll", "direction": "down"}\`
-
+*   **\`scroll\`**: To scroll the page.
 *   **\`wait\`**: For CAPTCHAs or to let the page load.
-    -   \`{"thought": "I am blocked by a CAPTCHA.", "action": "wait", "reason": "Waiting for user to solve CAPTCHA."}\`
 `;
 
     let historyLog = "No history yet.";
@@ -99,6 +90,9 @@ You are given the user's goal, a history of your actions, an annotated screensho
 ## Current URL
 \`${currentURL}\`
 
+## Credentials Found
+${credentials ? `Yes (username: ${credentials.username})` : 'No'}
+
 ## Previous Actions
 ${historyLog}
 
@@ -112,7 +106,7 @@ ${lastActionResult || "N/A"}
 ${pageStructure}
 \`\`\`
 
-**Your Task:** Look at the screenshot, the elements, and the results. Decide the single best next action to achieve the original goal. Ensure you check the element's HTML tag in the JSON before trying to type. Output a single JSON object with your action.`;
+**Your Task:** Following the CORE LOGIC & RULES, look at the screenshot and elements. Decide the single best next action to achieve the original goal. Output a single JSON object.`;
 
     const messages = [
         { role: "system", content: systemPrompt },
@@ -133,9 +127,9 @@ ${pageStructure}
 
     try {
         const response = await axios.post("https://api.openai.com/v1/chat/completions", {
-            model: "gpt-4o-mini",
+            model: "gpt-4o",
             messages: messages,
-            max_tokens: 1000,
+            max_tokens: 500,
             response_format: { type: "json_object" }
         }, { headers: { "Authorization": `Bearer ${OPENAI_API_KEY}` } });
 
@@ -152,4 +146,4 @@ ${pageStructure}
     }
 }
 
-module.exports = { decideNextAction, summarizeText }; // Export the new function
+module.exports = { decideNextAction, summarizeText, composePost };
