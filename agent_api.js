@@ -11,7 +11,7 @@ async function composePost(postDescription, onLog = console.log) {
          const response = await axios.post("https://api.openai.com/v1/chat/completions", {
             model: "gpt-4o-mini",
             messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userMessage }],
-            max_tokens: 280,
+            max_tokens: 1000,
         }, { headers: { "Authorization": `Bearer ${OPENAI_API_KEY}` } });
         return response.data.choices[0].message.content;
     } catch (error) {
@@ -131,7 +131,7 @@ ${pageStructure}
         const response = await axios.post("https://api.openai.com/v1/chat/completions", {
             model: "gpt-4o-mini",
             messages: messages,
-            max_tokens: 500,
+            max_tokens: 1000,
             response_format: { type: "json_object" }
         }, { headers: { "Authorization": `Bearer ${OPENAI_API_KEY}` } });
 
