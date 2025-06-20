@@ -1,6 +1,6 @@
 // playwright_executor.js
 
-const fs = require('fs');
+const fs = require('fs'); // +++ THIS IS THE FIX +++
 const path = require('path');
 const { chromium } = require('playwright');
 const sharp = require('sharp');
@@ -8,6 +8,7 @@ const { decideNextAction, summarizeText, composePost } = require('./agent_api.js
 
 const MAX_AGENT_STEPS = 25;
 const MAX_ACTION_HISTORY = 10;
+const MAX_AI_RETRIES = 3; 
 
 const CREDENTIALS_PATH = path.join(__dirname, 'credential_store.json');
 const USER_DATA_DIR = path.join(__dirname, 'playwright_session_data');
@@ -129,13 +130,58 @@ async function runAutonomousAgent(userGoal, onLog, agentControl, screenSize, pro
         if (truncatedResult && truncatedResult.length > 500) {
             truncatedResult = truncatedResult.slice(0, 500) + '... [truncated]';
         }
-        
-        const command = await decideNextAction(
-            userGoal, actionHistory, truncatedResult,
-            currentURL, structureString, screenshotBase64,
-            credentials, onLog
-        );
-      
+
+        let command;
+        let commandIsValid = false;
+        let aiRetries = 0;
+        let lastAiError = "";
+
+        while (aiRetries < MAX_AI_RETRIES && !commandIsValid) {
+            if (aiRetries > 0) {
+                onLog(`... AI response was invalid. Retrying with error message (Attempt ${aiRetries + 1}/${MAX_AI_RETRIES})`);
+            }
+            const aiResponse = await decideNextAction(
+                userGoal, actionHistory, lastActionResult,
+                currentURL, structureString, screenshotBase64,
+                credentials, onLog, lastAiError
+            );
+
+            command = aiResponse;
+            
+            switch(command.action) {
+                case 'type':
+                    if (command.bx_id && command.text !== undefined) commandIsValid = true;
+                    else lastAiError = "Invalid `type` action. It must include both `bx_id` and `text` keys.";
+                    break;
+                case 'compose_text':
+                    if (command.bx_id && command.description) commandIsValid = true;
+                    else lastAiError = "Invalid `compose_text` action. It must include both `bx_id` and `description` keys.";
+                    break;
+                case 'click':
+                case 'scrape_text':
+                case 'summarize':
+                    if (command.bx_id) commandIsValid = true;
+                    else lastAiError = `Invalid \`${command.action}\` action. It must include a \`bx_id\` key.`;
+                    break;
+                case 'navigate':
+                    if (command.url) commandIsValid = true;
+                    else lastAiError = "Invalid `navigate` action. It must include a `url` key.";
+                    break;
+                case 'scroll':
+                    if (command.direction) commandIsValid = true;
+                    else lastAiError = "Invalid `scroll` action. It must include a `direction` key.";
+                    break;
+                default:
+                    commandIsValid = true;
+                    break;
+            }
+            if (!commandIsValid) aiRetries++;
+        }
+
+        if (!commandIsValid) {
+            throw new Error(`AI failed to provide a valid command after ${MAX_AI_RETRIES} attempts. Last error: ${lastAiError}`);
+        }
+
         lastActionResult = null;
 
         if (command.thought) onLog(`🧠 Agent Thought: ${command.thought}`);
@@ -148,7 +194,7 @@ async function runAutonomousAgent(userGoal, onLog, agentControl, screenSize, pro
                 await page.goto(command.url, { waitUntil: 'domcontentloaded', timeout: 30000 });
                 break;
             case 'type':
-                onLog(`▶️ Action: Typing into element ${command.bx_id}`);
+                onLog(`▶️ Action: Typing "${command.text}" into element ${command.bx_id}`);
                 await page.locator(`[data-bx-id="${command.bx_id}"]`).fill(command.text);
                 break;
             case 'compose_text':
@@ -158,28 +204,15 @@ async function runAutonomousAgent(userGoal, onLog, agentControl, screenSize, pro
                  await page.locator(`[data-bx-id="${command.bx_id}"]`).fill(postContent);
                  lastActionResult = `Composed and typed post: "${postContent}"`;
                  break;
-            case 'click': // +++ MODIFIED: Using robust JS click +++
+            case 'click':
                 onLog(`▶️ Action: Clicking element ${command.bx_id}`);
-                try {
-                    await page.evaluate(id => {
-                        const element = document.querySelector(`[data-bx-id="${id}"]`);
-                        if (element) {
-                            element.click();
-                        } else {
-                            throw new Error(`Element with bx_id ${id} not found.`);
-                        }
-                    }, command.bx_id);
-                } catch (e) {
-                    onLog(`❌ JS Click failed: ${e.message}`);
-                    // As a fallback, try Playwright's force click
-                    await page.locator(`[data-bx-id="${command.bx_id}"]`).click({ force: true, timeout: 5000 });
-                }
+                await page.locator(`[data-bx-id="${command.bx_id}"]`).click({ force: true, timeout: 10000 });
                 break;
             case 'press_enter':
                  onLog(`▶️ Action: Pressing 'Enter' key.`);
                  await page.keyboard.press('Enter');
                  break;
-            case 'press_escape': // +++ NEW ACTION HANDLER +++
+            case 'press_escape':
                  onLog(`▶️ Action: Pressing 'Escape' key to close modal.`);
                  await page.keyboard.press('Escape');
                  break;

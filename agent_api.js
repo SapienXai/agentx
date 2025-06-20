@@ -45,11 +45,18 @@ async function decideNextAction(
     pageStructure, 
     screenshotBase64,
     credentials,
-    onLog = console.log
+    onLog = console.log,
+    lastAiError = "" // +++ NEW PARAMETER FOR SELF-CORRECTION +++
 ) {
     onLog(`🧠 Agent is thinking... What is the next best step for the goal: "${originalGoal}"`);
     
+    // +++ NEW: Add self-correction instruction if there was a previous error +++
+    const selfCorrectionInstruction = lastAiError 
+        ? `\n# CRITICAL CORRECTION\nOn your previous attempt, you generated an invalid command. The error was: "${lastAiError}". You MUST correct this mistake. Double-check your output to ensure it is a valid JSON object with all required keys for the chosen action.`
+        : "";
+
     const systemPrompt = `You are an expert web agent. Your mission is to achieve a user's goal by navigating and interacting with web pages.
+${selfCorrectionInstruction}
 
 # CORE LOGIC & RULES - YOU MUST FOLLOW THESE IN ORDER
 1.  **RULE #1: HANDLE BLOCKERS & MODALS.** Before anything else, check for overlays. If a login/signup modal, cookie banner, or any other popup is blocking the page, your ONLY priority is to deal with it. This usually means clicking a "Log in", "Accept", or "Close" button. **If you are stuck in a modal you don't understand, use the \`press_escape\` action.**
@@ -57,25 +64,20 @@ async function decideNextAction(
 3.  **RULE #3: EXECUTE THE GOAL.** Once the page is clear and you are logged in (if needed), proceed with the actions to achieve the \`originalGoal\`.
 4.  **RULE #4: FINISH.** When the goal is verifiably complete, you MUST use the \`finish\` action.
 
-# WORKFLOW EXAMPLES
-*   **Posting on Twitter:** 1. See login popup -> Click 'Sign In' (\`click\`). 2. On login page -> Use \`request_credentials\`. 3. On timeline -> Find 'What's happening?' text area (\`compose_text\`). 4. Click the now-enabled 'Post' button (\`click\`). 5. See post on timeline -> \`finish\`.
-*   **Stuck on a page:** 1. Accidentally clicked 'Messages'. 2. A 'New Message' modal appears, blocking the 'Home' button. 3. Realize I'm stuck. -> Use \`press_escape\` to close the modal. 4. Now I can see the 'Home' button and click it.
+# AVAILABLE ACTIONS (JSON FORMAT ONLY) - Adhere strictly to this schema.
 
-# AVAILABLE ACTIONS (JSON FORMAT ONLY)
-
-*   **\`navigate\`**: To go to a specific URL.
-*   **\`click\`**: To click a labeled element.
-*   **\`type\`**: To type simple text into an input field.
-*   **\`compose_text\`**: To generate creative content and type it into a field.
-*   **\`press_enter\`**: To simulate pressing the Enter key.
-*   **\`press_escape\`**: To simulate pressing the Escape key, used to close modals or popups.
-    - \`{"thought": "I seem to be stuck in a popup dialog. I will press escape to try and close it.", "action": "press_escape"}\`
-*   **\`scrape_text\`**: To extract text from an element.
-*   **\`summarize\`**: To process a large block of scraped text.
-*   **\`request_credentials\`**: Use this on a login page if you don't have credentials.
-*   **\`finish\`**: Use this ONLY when the original goal is fully complete.
-*   **\`scroll\`**: To scroll the page.
-*   **\`wait\`**: For CAPTCHAs or to let the page load.
+*   **\`navigate\`**: \`{"thought": "...", "action": "navigate", "url": "..."}\`
+*   **\`click\`**: \`{"thought": "...", "action": "click", "bx_id": "..."}\`
+*   **\`type\`**: \`{"thought": "...", "action": "type", "bx_id": "...", "text": "..."}\`
+*   **\`compose_text\`**: \`{"thought": "...", "action": "compose_text", "bx_id": "...", "description": "..."}\`
+*   **\`press_enter\`**: \`{"thought": "...", "action": "press_enter"}\`
+*   **\`press_escape\`**: \`{"thought": "...", "action": "press_escape"}\`
+*   **\`scrape_text\`**: \`{"thought": "...", "action": "scrape_text", "bx_id": "..."}\`
+*   **\`summarize\`**: \`{"thought": "...", "action": "summarize", "bx_id": "..."}\`
+*   **\`request_credentials\`**: \`{"thought": "...", "action": "request_credentials", "reason": "..."}\`
+*   **\`finish\`**: \`{"thought": "...", "action": "finish", "summary": "..."}\`
+*   **\`scroll\`**: \`{"thought": "...", "action": "scroll", "direction": "down|up"}\`
+*   **\`wait\`**: \`{"thought": "...", "action": "wait", "reason": "..."}\`
 `;
 
     let historyLog = "No history yet.";
@@ -106,7 +108,7 @@ ${lastActionResult || "N/A"}
 ${pageStructure}
 \`\`\`
 
-**Your Task:** Following the CORE LOGIC & RULES, look at the screenshot and elements. Decide the single best next action to achieve the original goal. Output a single JSON object.`;
+**Your Task:** Following the CORE LOGIC & RULES, look at the screenshot and elements. Decide the single best next action to achieve the original goal. Output a single, valid JSON object that strictly follows the schema.`;
 
     const messages = [
         { role: "system", content: systemPrompt },
