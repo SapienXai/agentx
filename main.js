@@ -8,7 +8,7 @@ if (!process.env.OPENAI_API_KEY) {
     process.exit(1);
 }
 
-const { app, BrowserWindow, screen, ipcMain } = require('electron'); // +++ MODIFIED
+const { app, BrowserWindow, screen, ipcMain } = require('electron');
 const path = require('path');
 const http = require('http');
 const express = require('express');
@@ -23,7 +23,7 @@ const { runAutonomousAgent } = require('./playwright_executor.js');
 const PORT = process.env.PORT || 3000;
 
 const SCHEDULED_TASKS_PATH = path.join(__dirname, 'scheduled_tasks.json');
-const CREDENTIALS_PATH = path.join(__dirname, 'credential_store.json'); // +++ NEW
+const CREDENTIALS_PATH = path.join(__dirname, 'credential_store.json');
 let activeSchedules = {};
 
 let taskQueue = [];
@@ -31,6 +31,27 @@ let isAgentRunning = false;
 
 const agentControls = {};
 const scheduledJobs = {};
+
+// +++ NEW: Credential checking function, accessible in this file +++
+function getCredentialsForUrl(url) {
+    if (!fs.existsSync(CREDENTIALS_PATH)) {
+        return null;
+    }
+    try {
+        const store = JSON.parse(fs.readFileSync(CREDENTIALS_PATH, 'utf-8'));
+        const urlObject = new URL(url);
+        // Match against any part of the hostname, e.g., 'google.com' in 'accounts.google.com'
+        for (const domain in store) {
+            if (urlObject.hostname.includes(domain)) {
+                return store[domain];
+            }
+        }
+        return null;
+    } catch (error) {
+        console.error('🚨 Error reading credential store:', error);
+        return null;
+    }
+}
 
 function getLocalIpAddress() {
     const interfaces = os.networkInterfaces();
@@ -44,7 +65,7 @@ function getLocalIpAddress() {
     return 'localhost';
 }
 
-function createWindow(win) { // +++ MODIFIED to accept win
+function createWindow(win) {
     const localIp = getLocalIpAddress();
     const serverUrl = `http://${localIp}:${PORT}`;
     
@@ -74,7 +95,6 @@ function createWindow(win) { // +++ MODIFIED to accept win
         }
     }
 
-    // +++ NEW: Function to prompt for credentials via IPC
     const promptForCredentials = (domain) => {
         return new Promise((resolve, reject) => {
             win.webContents.send('show-credentials-modal', { domain });
@@ -181,7 +201,7 @@ function createWindow(win) { // +++ MODIFIED to accept win
                 taskLogger, 
                 agentControls[taskId], 
                 screenSize, 
-                promptForCredentials // +++ MODIFIED
+                promptForCredentials
             );
             taskLogger('✅ Agent finished successfully!');
             broadcast(`${taskId}::TASK_STATUS_UPDATE::completed`);
@@ -225,19 +245,46 @@ function createWindow(win) { // +++ MODIFIED to accept win
         }
     });
 
+    // +++ MODIFIED: /api/run-task to perform pre-flight credential check +++
     expressApp.post('/api/run-task', async (req, res) => {
         const { plan, taskId } = req.body;
         
-        if (plan.isRecurring) {
-            const taskToSchedule = { id: taskId, plan, summary: plan.taskSummary, isRecurring: true, status: 'scheduled' };
-            scheduleTask(taskToSchedule);
-            saveSchedulesToFile();
-            res.json({ success: true, scheduled: true });
-        } else {
-            taskQueue.push({ plan, taskId });
-            broadcast(`${taskId}::log::✅ Task has been added to the queue.`);
-            res.json({ success: true, queued: true });
-            processQueue();
+        try {
+            // Pre-flight check for credentials if the plan requires login
+            if (plan.requiresLogin) {
+                const credentials = getCredentialsForUrl(plan.targetURL);
+                if (!credentials) {
+                    console.log(`Task ${taskId} requires login for ${plan.targetURL}, but no credentials found.`);
+                    broadcast(`${taskId}::log::⚠️ This task requires a login. Please provide credentials...`);
+                    const urlObject = new URL(plan.targetURL);
+                    const domain = urlObject.hostname.replace('www.', '');
+
+                    // This will show the modal and wait for the user
+                    await promptForCredentials(domain); 
+                    
+                    broadcast(`${taskId}::log::✅ Credentials received. Proceeding...`);
+                    console.log(`Credentials for ${domain} received, proceeding with task ${taskId}.`);
+                }
+            }
+
+            // Original logic to schedule or queue the task
+            if (plan.isRecurring) {
+                const taskToSchedule = { id: taskId, plan, summary: plan.taskSummary, isRecurring: true, status: 'scheduled' };
+                scheduleTask(taskToSchedule);
+                saveSchedulesToFile();
+                res.json({ success: true, scheduled: true });
+            } else {
+                taskQueue.push({ plan, taskId });
+                broadcast(`${taskId}::log::✅ Task has been added to the queue.`);
+                res.json({ success: true, queued: true });
+                processQueue();
+            }
+        } catch(error) {
+            // This block will catch the rejection from promptForCredentials if the user cancels
+            console.log(`User canceled credential entry for task ${taskId}.`);
+            broadcast(`${taskId}::log::⏹️ Credential entry canceled by user.`);
+            // Inform the front-end that the operation was aborted by the user
+            res.status(400).json({ success: false, error: error.message });
         }
     });
 
@@ -314,7 +361,6 @@ function main() {
         }, 
     });
 
-    // +++ NEW: IPC Handler for saving credentials
     ipcMain.handle('save-credentials', (event, { domain, username, password }) => {
         console.log(`Received credentials for ${domain}`);
         let store = {};
@@ -331,7 +377,7 @@ function main() {
         return { success: true };
     });
     
-    createWindow(win); // Pass window object
+    createWindow(win);
     win.loadURL(`http://localhost:${PORT}`);
     win.webContents.once('dom-ready', () => { console.log('--- Welcome to BrowserX Agent ---'); });
 }

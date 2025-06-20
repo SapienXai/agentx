@@ -21,40 +21,46 @@ async function createPlan(userGoal, onLog = console.log) {
 2.  **Create a granular, step-by-step plan.** Each step must be a single, clear, atomic action.
 3.  Summarize the user's ultimate goal into a short 'taskSummary'.
 4.  Analyze if the goal is a recurring task.
+5.  Analyze if the goal inherently requires user authentication ('requiresLogin').
 
 # HOW TO START A TASK (VERY IMPORTANT)
--   **If the goal requires a web search to find a website, your plan MUST start with these specific steps:**
+-   **DIRECT URL FIRST:** If the user's goal mentions a common, well-known website (e.g., "post on Medium", "search on Amazon", "login to Twitter"), your **first priority** is to attempt direct navigation. Construct the URL yourself (e.g., "https://www.medium.com", "https://www.amazon.com"). The first step should be to navigate to that URL.
+-   **GOOGLE SEARCH AS FALLBACK:** Only if the website is obscure, ambiguous, or you need to find a specific page (like "the career page for OpenAI"), should your plan start with a Google search. If you use Google, the plan MUST start with:
     1.  Navigate to "https://www.google.com".
     2.  Type the 'searchTerm' into the search bar.
     3.  Click the "Google Search" button.
-    4.  Click the most relevant search result link to navigate to the target website.
--   **If the goal provides a direct URL**, the first step should be to navigate to that URL.
+    4.  Click the most relevant search result link.
 
 # RESPONSE FORMAT
-Your output MUST be a single, valid JSON object with the keys: "searchTerm", "taskSummary", "plan", "isRecurring", "schedule", "cron", and "targetURL".
+Your output MUST be a single, valid JSON object with the keys: "searchTerm", "taskSummary", "plan", "isRecurring", "schedule", "cron", "targetURL", and "requiresLogin".
 
 # KEY-SPECIFIC RULES
 -   **"plan"**: MUST be an array of objects, where each object has a single key "step" with a string value.
--   **"searchTerm"**: The primary keyword(s) to search for. If no search is needed, this can be the name of the website.
--   **"targetURL"**: The initial URL the browser should navigate to. For a web search, this MUST be "https://www.google.com". For direct navigation, it's the URL from the user's goal.
--   **"cron" / "schedule"**: Must be empty strings ("") if "isRecurring" is false. Use standard 5-field cron syntax if true.
+-   **"searchTerm"**: The primary subject. For direct navigation, this is the site name (e.g., "Medium"). For search, it's the search query.
+-   **"targetURL"**: The initial URL. For direct navigation, this MUST be the guessed URL (e.g., "https://www.medium.com"). For a web search, this MUST be "https://www.google.com".
+-   **"cron" / "schedule"**: Must be empty strings ("") if "isRecurring" is false.
+-   **"requiresLogin"**: A boolean (true/false).
 
-# EXAMPLE (for a goal requiring a search)
-// User Goal: "Find the latest news on the 'AI' subreddit"
+# EXAMPLE (for a goal with a direct URL)
+// User Goal: "Post 'Hello World' on my Medium blog"
 {
-  "searchTerm": "reddit AI",
-  "taskSummary": "Find the latest news on the 'AI' subreddit",
+  "searchTerm": "Medium",
+  "taskSummary": "Post 'Hello World' on Medium",
   "plan": [
-    { "step": "Navigate to https://www.google.com" },
-    { "step": "Type 'reddit AI' into the search bar." },
-    { "step": "Click the 'Google Search' button." },
-    { "step": "Click the link for the 'r/artificial' subreddit in the search results." },
-    { "step": "Sort the posts by 'New' to find the latest news." }
+    { "step": "Navigate to https://www.medium.com" },
+    { "step": "Click the 'Sign in' button." },
+    { "step": "Enter username and password to log in." },
+    { "step": "Click the 'Write' button to start a new story." },
+    { "step": "Enter 'AI agents taking our jobs' as the title." },
+    { "step": "Write the main content of the blog post in the story editor." },
+    { "step": "Click the 'Publish' button." },
+    { "step": "Confirm the publication." }
   ],
   "isRecurring": false,
   "schedule": "",
   "cron": "",
-  "targetURL": "https://www.google.com"
+  "targetURL": "https://www.medium.com",
+  "requiresLogin": true
 }
 
 ${selfCorrectionPrompt}`;
@@ -66,7 +72,7 @@ ${selfCorrectionPrompt}`;
             }, { headers: { "Authorization": `Bearer ${OPENAI_API_KEY}` } });
 
             const plan = JSON.parse(response.data.choices[0].message.content);
-            const requiredKeys = ["searchTerm", "taskSummary", "plan", "isRecurring", "schedule", "cron", "targetURL"]; // Added targetURL
+            const requiredKeys = ["searchTerm", "taskSummary", "plan", "isRecurring", "schedule", "cron", "targetURL", "requiresLogin"];
             for (const key of requiredKeys) {
                 if (plan[key] === undefined) {
                      throw new Error(`Invalid plan schema: The generated JSON is missing the required key '${key}'.`);
@@ -77,6 +83,9 @@ ${selfCorrectionPrompt}`;
             }
             if (typeof plan.isRecurring !== 'boolean') {
                  throw new Error(`Invalid plan schema: 'isRecurring' must be a boolean.`);
+            }
+            if (typeof plan.requiresLogin !== 'boolean') {
+                 throw new Error(`Invalid plan schema: 'requiresLogin' must be a boolean.`);
             }
             
             return plan;
@@ -101,6 +110,7 @@ async function decideNextBrowserAction(goal, fullPlan, currentSubTask, currentUR
 4.  **ACTION:** Choose **one** action from the list.
 5.  **SUB-TASK COMPLETION:** If the Current Sub-Task is complete, you MUST use the \`finish_step\` action.
 6.  **SELECTOR HIERARCHY:** ALWAYS prefer \`testid\` if available.
+7.  **STUCK?** If the plan is not working or you are on an error page (404, etc.), you MUST use the \`replan\` action. Do not get stuck in a loop.
 
 # AVAILABLE ACTIONS (JSON FORMAT ONLY)
 
@@ -119,13 +129,13 @@ async function decideNextBrowserAction(goal, fullPlan, currentSubTask, currentUR
 *   **\`finish\`**: When the **Overall Goal** is successfully completed.
     -   \`{"thought": "I've clicked the final post button and can see the post. The entire task is complete.", "action": "finish", "summary": "Successfully posted the update."}\`
 
-*   **\`replan\`**: If the current plan is failing or you are on an error page.
+*   **\`replan\`**: If the current plan is failing, you're on an error page, or you are stuck in a loop.
     -   \`{"thought": "This is a 404 page. The plan is blocked.", "action": "replan", "reason": "Landed on a 404 page."}\`
 `;
 
         let historyLog = "No history yet.";
         if (actionHistory && actionHistory.length > 0) {
-            historyLog = actionHistory.map((action, index) => `${index + 1}. ${JSON.stringify(action)}`).join('\n');
+            historyLog = actionHistory.map((index, action) => `${index + 1}. ${JSON.stringify(action)}`).join('\n');
         }
 
         const userPrompt = `## FULL PLAN (Your current step is marked with -->)

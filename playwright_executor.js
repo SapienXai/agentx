@@ -7,6 +7,9 @@ const { createPlan, decideNextBrowserAction } = require('./agent_api.js');
 
 const MAX_AGENT_STEPS = 25;
 const MAX_ACTION_HISTORY = 4;
+// +++ NEW: Configuration for loop detection +++
+const MAX_IDENTICAL_ACTIONS = 3; 
+
 const CREDENTIALS_PATH = path.join(__dirname, 'credential_store.json');
 const USER_DATA_DIR = path.join(__dirname, 'playwright_session_data');
 
@@ -53,13 +56,22 @@ async function getPageStructure(page) {
     };
 }
 
-// +++ MODIFIED: Added promptForCredentials parameter to the function signature +++
+// +++ NEW: Helper function for random delays +++
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+function getRandomDelay() {
+  return 1000 + Math.random() * 1500; // Delay between 1 and 2.5 seconds
+}
+
 async function runAutonomousAgent(startUrl, taskSummary, plan, onLog, agentControl, screenSize, promptForCredentials) {
   onLog(`🚀 Launching browser with persistent session from: ${USER_DATA_DIR}`);
   const context = await chromium.launchPersistentContext(USER_DATA_DIR, {
       headless: false,
       viewport: screenSize || { width: 1280, height: 720 },
       userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+      // Add some human-like behavior
+      slowMo: 50, // Slows down Playwright operations by 50ms
   });
   
   const page = context.pages().length > 0 ? context.pages()[0] : await context.newPage();
@@ -73,6 +85,9 @@ async function runAutonomousAgent(startUrl, taskSummary, plan, onLog, agentContr
 
   let currentPlan = plan;
   let currentStepIndex = 0;
+
+  // +++ NEW: State for loop detection +++
+  let lastActionState = { signature: null, count: 0 };
 
   try {
     onLog(`🚀 Navigating to ${startUrl}...`);
@@ -95,7 +110,8 @@ async function runAutonomousAgent(startUrl, taskSummary, plan, onLog, agentContr
       onLog(`\n--- Step ${i + 1} / ${MAX_AGENT_STEPS} (Sub-Task ${currentStepIndex + 1}/${currentPlan.length}) ---`);
       onLog(`🎯 Current Sub-Task: "${currentSubTask}"`);
       
-      await new Promise(r => setTimeout(r, 2000));
+      // +++ MODIFIED: Use random delay instead of fixed one +++
+      await sleep(getRandomDelay());
 
       const currentURL = page.url();
       const credentials = getCredentialsForUrl(currentURL);
@@ -125,6 +141,22 @@ async function runAutonomousAgent(startUrl, taskSummary, plan, onLog, agentContr
       if (command.thought) {
           onLog(`🧠 Agent Thought: ${command.thought}`);
       }
+
+      // +++ NEW: Loop detection logic +++
+      const actionSignature = `${command.action}_${JSON.stringify(command.selector)}_${currentURL}`;
+      if (lastActionState.signature === actionSignature) {
+          lastActionState.count++;
+          onLog(`⚠️ This is the ${lastActionState.count} time the agent has tried this exact action.`);
+          if (lastActionState.count >= MAX_IDENTICAL_ACTIONS) {
+              onLog(`🚨 Agent is stuck in a loop! Forcing a replan.`);
+              command = {
+                  action: 'replan',
+                  reason: `The agent tried the same action '${command.action}' on the same element and URL ${MAX_IDENTICAL_ACTIONS} times without success. The plan is likely flawed.`
+              };
+          }
+      } else {
+          lastActionState = { signature: actionSignature, count: 1 };
+      }
       
       actionHistory.unshift(command);
       if (actionHistory.length > MAX_ACTION_HISTORY) actionHistory.pop();
@@ -144,10 +176,10 @@ async function runAutonomousAgent(startUrl, taskSummary, plan, onLog, agentContr
           onLog(`🚀 Navigating to new start URL: ${startUrl}`);
           await page.goto(startUrl, { waitUntil: 'domcontentloaded' });
           actionHistory = [];
+          lastActionState = { signature: null, count: 0 }; // Reset loop detector
           break;
         }
 
-        // +++ NEW: Handler for credential requests +++
         case 'request_credentials': {
             onLog(`⏸️ Action: Agent requires credentials. Reason: ${command.reason}`);
             onLog('🟡 Please provide the credentials in the main application window.');
@@ -155,13 +187,11 @@ async function runAutonomousAgent(startUrl, taskSummary, plan, onLog, agentContr
             const domain = urlObject.hostname.replace('www.', '');
 
             try {
-                // This function is passed from main.js and triggers the UI prompt via IPC
                 await promptForCredentials(domain); 
                 onLog('✅ Credentials received. Resuming agent...');
-                actionHistory = []; // Clear history after this interruption
-                continue; // Re-evaluate the page, now that credentials might be available
+                actionHistory = [];
+                continue;
             } catch (e) {
-                // This catch block runs if the user cancels the prompt in the UI
                 onLog(`❌ User canceled credential entry. Stopping agent. Error: ${e.message}`);
                 throw new Error('User canceled credential entry.');
             }
@@ -179,14 +209,16 @@ async function runAutonomousAgent(startUrl, taskSummary, plan, onLog, agentContr
                 onLog(`▶️ Action: Targeting unique testid '${command.selector.testid}'`);
                 selector = page.getByTestId(command.selector.testid);
             } else if (command.selector.role && command.selector.name) {
-                onLog(`▶️ Action: Targeting role '${command.selector.role}' with name '${command.selector.name}'`);
-                selector = page.getByRole(command.selector.role, { name: command.selector.name, exact: false });
+                onLog(`▶️ Action: Targeting FIRST instance of role '${command.selector.role}' with name '${command.selector.name}'`);
+                selector = page.getByRole(command.selector.role, { name: command.selector.name, exact: false }).first();
             } else {
                 onLog(`⚠️ AI provided an invalid selector for '${command.action}'. Re-evaluating. Selector: ${JSON.stringify(command.selector)}`);
                 continue;
             }
 
             try {
+                await selector.waitFor({ state: 'visible', timeout: 5000 });
+
                 if (command.action === 'type') {
                     onLog(`   ... Typing "${command.text}"`);
                     await selector.fill(command.text);
@@ -205,6 +237,7 @@ async function runAutonomousAgent(startUrl, taskSummary, plan, onLog, agentContr
           onLog(`✅ Sub-task "${currentSubTask}" completed.`);
           currentStepIndex++;
           actionHistory = []; 
+          lastActionState = { signature: null, count: 0 }; // Reset loop detector
           break;
 
         case 'think':
@@ -235,7 +268,7 @@ async function runAutonomousAgent(startUrl, taskSummary, plan, onLog, agentContr
         case 'finish':
           onLog(`✅ Action: Finish. ${command.summary}`);
           onLog(`🎉 Browser will close in 5 seconds.`);
-          await new Promise(r => setTimeout(r, 5000));
+          await sleep(5000);
           return;
 
         default:
@@ -256,7 +289,7 @@ async function runAutonomousAgent(startUrl, taskSummary, plan, onLog, agentContr
     onLog('🔌 Closing browser...');
     if (browser && browser.isConnected()) {
         await context.tracing.stop({ path: tracePath });
-        onLog(`📊 Trace file saved. To view it, drag ${tracePath} into https://trace.playwright.dev/`);
+        onLog(`📊 Trace file saved. To view it, drag ${tracePath} into https://trace.wright.dev/`);
     }
     await context.close();
   }

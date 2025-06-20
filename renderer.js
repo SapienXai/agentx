@@ -285,6 +285,7 @@ runButton.addEventListener('click', async () => {
     }
 });
 
+// +++ MODIFIED: 'confirm' case to handle API failure from credential cancellation +++
 taskListsWrapper.addEventListener('click', async (e) => {
     const button = e.target.closest('[data-action]');
     if (!button) return;
@@ -297,15 +298,25 @@ taskListsWrapper.addEventListener('click', async (e) => {
 
     switch (action) {
         case 'confirm':
+            // Optimistically update UI
             task.status = task.isRecurring ? 'scheduled' : 'queued';
             task.log += task.isRecurring ? "Confirmed. Scheduling task...\n" : "Confirmed. Adding to queue...\n";
             renderTasks();
             
-            const response = await fetch('/api/run-task', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ plan: task.plan, taskId: task.id }) });
-            if (!response.ok) {
-                const errorResult = await response.json();
+            try {
+                const response = await fetch('/api/run-task', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ plan: task.plan, taskId: task.id }) });
+                // If the server responds with an error (e.g., user canceled credentials)
+                if (!response.ok) {
+                    const errorResult = await response.json();
+                    // Revert status to 'stopped' on user cancellation
+                    task.status = 'stopped';
+                    task.log += `Error: ${errorResult.error || 'Task could not be started.'}\n`;
+                    renderTasks();
+                }
+            } catch (error) {
+                // Handle network errors
                 task.status = 'failed';
-                task.log += `Error: ${errorResult.error}\n`;
+                task.log += `Network Error: ${error.message}\n`;
                 renderTasks();
             }
             break;
