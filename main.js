@@ -88,27 +88,17 @@ function createWindow(win) {
         });
     };
 
-    // +++ NEW PROMPTER FOR HUMAN INTERVENTION +++
-    const promptForHumanInput = (reason) => {
-        return new Promise((resolve, reject) => {
-            win.webContents.send('show-human-input-modal', { reason });
-
-            ipcMain.once('human-input-provided', (event, { success, error }) => {
-                if (success) {
-                    resolve();
-                } else {
-                    reject(new Error(error || 'User canceled the operation.'));
-                }
-            });
-        });
-    };
-
     function scheduleTask(task) {
         console.warn("Scheduling is not fully supported in the new goal-oriented model yet.");
     }
     
-    function saveSchedulesToFile() { /* ... unchanged ... */ }
-    function loadAndRescheduleTasks() { /* ... unchanged ... */ }
+    function saveSchedulesToFile() {
+        // ... unchanged ...
+    }
+
+    function loadAndRescheduleTasks() {
+        // ... unchanged ...
+    }
     
     async function processQueue() {
         if (isAgentRunning || taskQueue.length === 0) {
@@ -127,15 +117,22 @@ function createWindow(win) {
             agentControls[taskId] = { stop: false, isRunning: true };
             
             taskLogger(`▶️ Agent starting execution for: "${userGoal}"`);
-            await runAutonomousAgent(
+            
+            // +++ CAPTURE THE RESULT FROM THE AGENT +++
+            const finalSummary = await runAutonomousAgent(
                 userGoal, 
                 taskPlan,
                 taskLogger, 
                 agentControls[taskId], 
                 screenSize, 
-                promptForCredentials,
-                promptForHumanInput // +++ Pass the new prompter function
+                promptForCredentials
             );
+            
+            // +++ BROADCAST THE RESULT IF IT EXISTS +++
+            if (finalSummary) {
+                broadcast(`${taskId}::TASK_RESULT::${finalSummary}`);
+            }
+
             broadcast(`${taskId}::TASK_STATUS_UPDATE::completed`);
             
         } catch (error) {
@@ -230,7 +227,31 @@ function createWindow(win) {
             }
 
             if (scheduledJobs[taskId]) {
-                 // ... unchanged ...
+                console.log(`🔴 Stop signal received for SCHEDULED task ${taskId}.`);
+                
+                scheduledJobs[taskId].stop();
+                delete scheduledJobs[taskId];
+
+                delete activeSchedules[taskId];
+                saveSchedulesToFile();
+                
+                const initialQueueLength = taskQueue.length;
+                taskQueue = taskQueue.filter(task => {
+                    if (task.plan && task.plan.parentId === taskId) {
+                        console.log(`... also removing its queued instance ${task.taskId}.`);
+                        broadcast(`${task.taskId}::TASK_STATUS_UPDATE::stopped`);
+                        broadcast(`${task.taskId}::log::⏹️ Parent schedule was canceled.`);
+                        return false;
+                    }
+                    return true;
+                });
+                if (taskQueue.length < initialQueueLength) {
+                    console.log(`... cleared ${initialQueueLength - taskQueue.length} instances from the queue.`);
+                }
+
+                broadcast(`${taskId}::TASK_STATUS_UPDATE::stopped`);
+                broadcast(`${taskId}::log::⏹️ Schedule has been canceled.`);
+                wasActionTaken = true;
             }
             
             if (!wasActionTaken) {

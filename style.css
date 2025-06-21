@@ -116,16 +116,29 @@ pre.status-log { background-color: var(--bg-color); padding: 12px; border-radius
 .task-action-btn.stop { background-color: #f44336; }
 .task-action-btn:hover { filter: brightness(1.2); }
 .task-action-btn:active { transform: scale(0.96); }
-.run-count-info {
+.run-count-info { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--status-scheduled-text); background-color: rgba(0,0,0,0.2); padding: 6px 10px; border-radius: 8px; margin-top: 15px; }
+
+/* +++ NEW: Task Result Card Styling +++ */
+.task-result {
+    background-color: var(--status-running-bg);
+    border-left: 4px solid var(--status-running-text);
+    padding: 15px 20px;
+    margin-bottom: 20px;
+    border-radius: 8px;
+}
+.task-result h4 {
     display: flex;
     align-items: center;
-    gap: 8px;
-    font-size: 13px;
-    color: var(--status-scheduled-text);
-    background-color: rgba(0,0,0,0.2);
-    padding: 6px 10px;
-    border-radius: 8px;
-    margin-top: 15px;
+    gap: 10px;
+    color: var(--status-running-text);
+    font-size: 16px;
+    margin-top: 0;
+    margin-bottom: 10px;
+}
+.task-result p {
+    font-size: 15px;
+    line-height: 1.6;
+    color: var(--text-primary);
 }
 
 /* --- Task Status --- */
@@ -143,16 +156,7 @@ pre.status-log { background-color: var(--bg-color); padding: 12px; border-radius
 .status-pending { background-color: var(--status-pending-bg); color: var(--status-pending-text); border-color: var(--status-pending-border); }
 .status-scheduled { background-color: var(--status-scheduled-bg); color: var(--status-scheduled-text); border-color: var(--status-scheduled-border); }
 .status-queued { background-color: var(--status-queued-bg); color: var(--status-queued-text); border-color: var(--status-queued-border); }
-.task-count-badge {
-    background-color: var(--surface-darker);
-    color: var(--text-secondary);
-    font-size: 12px;
-    font-weight: 600;
-    padding: 2px 7px;
-    border-radius: 8px;
-    margin-left: 6px;
-    vertical-align: middle;
-}
+.task-count-badge { background-color: var(--surface-darker); color: var(--text-secondary); font-size: 12px; font-weight: 600; padding: 2px 7px; border-radius: 8px; margin-left: 6px; vertical-align: middle; }
 .running-indicator { width: 8px; height: 8px; background-color: var(--status-running-text); border-radius: 50%; animation: pulse 1.5s infinite ease-in-out; }
 @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(165, 214, 167, 0.7); } 70% { box-shadow: 0 0 0 8px rgba(165, 214, 167, 0); } 100% { box-shadow: 0 0 0 0 rgba(165, 214, 167, 0); } }
 
@@ -172,35 +176,6 @@ code#connect-url { background-color: var(--bg-color); padding: 5px 10px; border-
 .credentials-form input:focus { border-color: var(--focus-ring); box-shadow: 0 0 0 2px rgba(90, 72, 148, 0.4); }
 .credentials-form button { color: var(--text-bright); background-color: var(--primary-action); border: none; border-radius: 20px; padding: 12px 15px; font-size: 15px; font-weight: 600; cursor: pointer; transition: background-color 0.2s; }
 .credentials-form button:hover { background-color: var(--primary-action-hover); }
-
-/* --- Human Intervention Modal Styles (New) --- */
-.intervention-reason {
-    background-color: var(--bg-color);
-    padding: 15px;
-    border-radius: 8px;
-    margin: 20px 0;
-    text-align: left;
-    border: 1px solid var(--border-color);
-}
-.intervention-reason strong {
-    color: var(--text-primary);
-}
-#human-input-done-button {
-    width: 100%;
-    color: var(--text-bright);
-    background-color: var(--primary-action);
-    border: none;
-    border-radius: 20px;
-    padding: 12px 15px;
-    font-size: 15px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: background-color 0.2s;
-}
-#human-input-done-button:hover {
-    background-color: var(--primary-action-hover);
-}
-
 
 /* --- Utility --- */
 .d-none { display: none !important; }

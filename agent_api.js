@@ -30,6 +30,7 @@ You MUST respond with a JSON object with the following structure:
 
     } catch (error) {
         onLog(`🚨 Plan creation failed: ${error.message}`);
+        // Return null on error. The calling function will handle this.
         return null;
     }
 }
@@ -83,31 +84,20 @@ async function decideNextAction(
     onLog(`🧠 Agent is thinking... What is the next best step for the goal: "${originalGoal}"`);
     
     const selfCorrectionInstruction = lastAiError 
-        ? `\n# CRITICAL CORRECTION\n${lastAiError} You MUST correct this mistake. Double-check your output to ensure it is a valid JSON object with all required keys for the chosen action. Do NOT repeat the failed action.`
+        ? `\n# CRITICAL CORRECTION\nOn your previous attempt, you generated an invalid command. The error was: "${lastAiError}". You MUST correct this mistake. Double-check your output to ensure it is a valid JSON object with all required keys for the chosen action.`
         : "";
 
     const systemPrompt = `You are an expert web agent. Your mission is to achieve a user's goal by navigating and interacting with web pages.
 ${selfCorrectionInstruction}
 
 # CORE LOGIC & RULES - YOU MUST FOLLOW THESE IN ORDER
-1.  **RULE #1: HANDLE BLOCKERS.** Your first priority is to handle anything blocking the page content.
-    *   **CAPTCHA/BOT-CHECKS:** If you see a CAPTCHA ("I'm not a robot", etc.), you CANNOT solve it. You MUST use the \`request_human_intervention\` action immediately.
-    *   **MODALS:** For cookie banners, popups, etc., your priority is to click "Accept", "Close", or a similar button. If you are stuck in a modal you don't understand, use the \`press_escape\` action.
-
-2.  **RULE #2: LOGIN PROCEDURE.** If the goal requires you to be logged in (e.g., posting content, accessing an account), you must follow this procedure strictly:
-    *   **A) CHECK IF ALREADY LOGGED IN:** Look at the screenshot for signs you are already logged in (e.g., a profile picture, a 'Logout' button, a personalized dashboard). If you are logged in, proceed to Rule #3.
-    *   **B) CHECK FOR CREDENTIALS:** If you are on a login page, check the \`Credentials Found\` status provided below.
-    *   **C) DECIDE ACTION:**
-        *   If \`Credentials Found\` is **'Yes'**: Your next actions should be to \`type\` the username and password into the correct fields.
-        *   If \`Credentials Found\` is **'No'**: You MUST use the \`request_credentials\` action. **Do NOT try to type placeholder text like '<email>' or '<password>'.** This is a critical instruction.
-
-3.  **RULE #3: EXECUTE THE GOAL.** Once the page is clear and you are logged in (if needed), proceed with the actions to achieve the \`originalGoal\` by following the high-level plan.
-
-4.  **RULE #4: DON'T GET STUCK.** If you are instructed that you are in a loop (your previous actions did not change the page), you MUST take a DIFFERENT action. Try scrolling, waiting, or if completely blocked, use \`request_human_intervention\`.
-
-5.  **RULE #5: FINISH.** When the goal is verifiably complete, you MUST use the \`finish\` action.
+1.  **RULE #1: ADHERE TO THE PLAN.** Your primary job is to execute the steps in the provided high-level plan. Use the current screen to determine the best action to accomplish the *next* logical step of the plan.
+2.  **RULE #2: HANDLE BLOCKERS & MODALS.** Before anything else, check for overlays. If a login/signup modal, cookie banner, or any other popup is blocking the page, your ONLY priority is to deal with it.
+3.  **RULE #3: LOGIN IF NECESSARY.** If the goal requires being logged in and you are not, your next priority is to log in.
+4.  **RULE #4: FINISH WHEN THE GOAL IS MET.** This is the most important rule. **Examine the \`originalGoal\`.** If the goal was to *find information* (like a link, a price, an address), and that information is now visible on the screen or was in the \`lastActionResult\`, the task is COMPLETE. You MUST use the \`finish\` action and provide the information in the summary. Do not get stuck in loops trying to navigate to a page you've already found. For example, if the goal is "Find the link to site X" and you see "site-x.com" on the page, the goal is met. Use \`finish\`.
 
 # AVAILABLE ACTIONS (JSON FORMAT ONLY) - Adhere strictly to this schema.
+
 *   **\`navigate\`**: \`{"thought": "...", "action": "navigate", "url": "..."}\`
 *   **\`click\`**: \`{"thought": "...", "action": "click", "bx_id": "..."}\`
 *   **\`type\`**: \`{"thought": "...", "action": "type", "bx_id": "...", "text": "..."}\`
@@ -117,7 +107,6 @@ ${selfCorrectionInstruction}
 *   **\`scrape_text\`**: \`{"thought": "...", "action": "scrape_text", "bx_id": "..."}\`
 *   **\`summarize\`**: \`{"thought": "...", "action": "summarize", "bx_id": "..."}\`
 *   **\`request_credentials\`**: \`{"thought": "...", "action": "request_credentials", "reason": "..."}\`
-*   **\`request_human_intervention\`**: \`{"thought": "...", "action": "request_human_intervention", "reason": "..."}\`
 *   **\`finish\`**: \`{"thought": "...", "action": "finish", "summary": "..."}\`
 *   **\`scroll\`**: \`{"thought": "...", "action": "scroll", "direction": "down|up"}\`
 *   **\`wait\`**: \`{"thought": "...", "action": "wait", "reason": "..."}\`
@@ -158,7 +147,7 @@ ${lastActionResult || "N/A"}
 ${pageStructure}
 \`\`\`
 
-**Your Task:** Following the CORE LOGIC & RULES, look at the screenshot and elements. Decide the single best next action to achieve the original goal by following the high-level plan. Output a single, valid JSON object that strictly follows the schema.`;
+**Your Task:** Following the CORE LOGIC & RULES, look at the screenshot and elements. Decide the single best next action to achieve the original goal. Remember RULE #4: if the goal is complete, you MUST use the \`finish\` action. Output a single, valid JSON object.`;
 
     const messages = [
         { role: "system", content: systemPrompt },
