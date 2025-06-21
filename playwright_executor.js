@@ -1,6 +1,6 @@
 // playwright_executor.js
 
-const fs = require('fs'); // +++ THIS IS THE FIX +++
+const fs = require('fs');
 const path = require('path');
 const { chromium } = require('playwright');
 const sharp = require('sharp');
@@ -14,45 +14,57 @@ const CREDENTIALS_PATH = path.join(__dirname, 'credential_store.json');
 const USER_DATA_DIR = path.join(__dirname, 'playwright_session_data');
 
 async function getInteractiveElements(page) {
-    await page.evaluate(() => {
-        document.querySelectorAll('[data-bx-id]').forEach(el => el.removeAttribute('data-bx-id'));
-    });
-    const elements = await page.evaluate(() => {
-        const selectors = [
-            'a[href]', 'button', 'input[type="button"]', 'input[type="submit"]',
-            'input[type="text"]', 'input[type="search"]', 'input[type="email"]', 'input[type="password"]', 'textarea',
-            '[role="button"]', '[role="link"]', '[role="tab"]', '[role="checkbox"]', '[role="option"]', '[role="menuitem"]',
-            'select', '[onclick]'
-        ];
-        const interactiveElements = Array.from(document.querySelectorAll(selectors.join(', ')));
-        const contentElements = Array.from(document.querySelectorAll('h1, h2, h3, h4, main, article, section, [role="main"]'));
-        const allElements = [...interactiveElements, ...contentElements];
+    // This function can fail if the page navigates during evaluation.
+    // We add a try-catch block to handle this gracefully.
+    try {
+        await page.evaluate(() => {
+            document.querySelectorAll('[data-bx-id]').forEach(el => el.removeAttribute('data-bx-id'));
+        });
+        const elements = await page.evaluate(() => {
+            const selectors = [
+                'a[href]', 'button', 'input[type="button"]', 'input[type="submit"]',
+                'input[type="text"]', 'input[type="search"]', 'input[type="email"]', 'input[type="password"]', 'textarea',
+                '[role="button"]', '[role="link"]', '[role="tab"]', '[role="checkbox"]', '[role="option"]', '[role="menuitem"]',
+                'select', '[onclick]'
+            ];
+            const interactiveElements = Array.from(document.querySelectorAll(selectors.join(', ')));
+            const contentElements = Array.from(document.querySelectorAll('h1, h2, h3, h4, main, article, section, [role="main"]'));
+            const allElements = [...interactiveElements, ...contentElements];
 
-        const uniqueVisibleElements = [];
-        const seenElements = new Set();
-        allElements.forEach(el => {
-            const rect = el.getBoundingClientRect();
-            if (rect.width > 0 && rect.height > 0 && !seenElements.has(el)) {
-                uniqueVisibleElements.push(el);
-                seenElements.add(el);
-            }
+            const uniqueVisibleElements = [];
+            const seenElements = new Set();
+            allElements.forEach(el => {
+                const rect = el.getBoundingClientRect();
+                if (rect.width > 0 && rect.height > 0 && !seenElements.has(el)) {
+                    uniqueVisibleElements.push(el);
+                    seenElements.add(el);
+                }
+            });
+            
+            return uniqueVisibleElements.map((el, index) => {
+                const rect = el.getBoundingClientRect();
+                const id = `bx-${index}`;
+                el.setAttribute('data-bx-id', id);
+                return {
+                    bx_id: id,
+                    x: rect.left,
+                    y: rect.top,
+                    text: el.innerText.trim().slice(0, 150) || el.ariaLabel || el.placeholder || '',
+                    tag: el.tagName.toLowerCase(),
+                    role: el.getAttribute('role') || 'n/a'
+                };
+            });
         });
-        
-        return uniqueVisibleElements.map((el, index) => {
-            const rect = el.getBoundingClientRect();
-            const id = `bx-${index}`;
-            el.setAttribute('data-bx-id', id);
-            return {
-                bx_id: id,
-                x: rect.left,
-                y: rect.top,
-                text: el.innerText.trim().slice(0, 150) || el.ariaLabel || el.placeholder || '',
-                tag: el.tagName.toLowerCase(),
-                role: el.getAttribute('role') || 'n/a'
-            };
-        });
-    });
-    return elements;
+        return elements;
+    } catch (error) {
+        if (error.message.includes('Execution context was destroyed')) {
+            console.log('...Retrying element analysis after navigation...');
+            // Give the page a moment to settle, then retry once.
+            await sleep(1000); 
+            return getInteractiveElements(page);
+        }
+        throw error;
+    }
 }
 
 async function annotateScreenshot(screenshotBuffer, elements) {
@@ -90,7 +102,25 @@ function getCredentialsForUrl(url) {
 
 function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
 
-async function runAutonomousAgent(userGoal, onLog, agentControl, screenSize, promptForCredentials) {
+// +++ NEW: Robust page stabilization function +++
+async function stabilizePage(page, onLog) {
+    onLog("...Waiting for page to stabilize after action...");
+    try {
+        // Wait for multiple conditions to be met.
+        // 'domcontentloaded' is a good first check for basic page availability.
+        // 'networkidle' is great for waiting for all background requests to finish.
+        await Promise.all([
+            page.waitForLoadState('domcontentloaded', { timeout: 10000 }),
+            page.waitForLoadState('networkidle', { timeout: 15000 }),
+        ]);
+        onLog("...Page is stable.");
+    } catch (error) {
+        onLog(`...Page stabilization timed out, but continuing. Reason: ${error.message}`);
+    }
+}
+
+
+async function runAutonomousAgent(userGoal, plan, onLog, agentControl, screenSize, promptForCredentials) {
   onLog(`🚀 Launching browser for goal: "${userGoal}"`);
   const context = await chromium.launchPersistentContext(USER_DATA_DIR, {
       headless: false,
@@ -99,7 +129,10 @@ async function runAutonomousAgent(userGoal, onLog, agentControl, screenSize, pro
   });
   
   const page = context.pages().length > 0 ? context.pages()[0] : await context.newPage();
-  await page.goto('about:blank');
+  
+  onLog(`🧭 Navigating to initial URL from plan: ${plan.targetURL}`);
+  await page.goto(plan.targetURL || 'https://www.google.com', { waitUntil: 'domcontentloaded' });
+
 
   const tracePath = path.join(__dirname, `trace_${Date.now()}.zip`);
   await context.tracing.start({ screenshots: true, snapshots: true, sources: true });
@@ -112,12 +145,14 @@ async function runAutonomousAgent(userGoal, onLog, agentControl, screenSize, pro
     for (let i = 0; i < MAX_AGENT_STEPS; i++) {
         if (agentControl && agentControl.stop) throw new Error('Agent stopped by user.');
       
+        await stabilizePage(page, onLog); // +++ Stabilize at the BEGINNING of the loop +++
+
         onLog(`\n--- Step ${i + 1} / ${MAX_AGENT_STEPS} ---`);
       
         const currentURL = page.url();
         const credentials = getCredentialsForUrl(currentURL);
         
-        onLog("視覺分析：標記所有互動元素...");
+        onLog("Visual analysis: Labeling interactive elements...");
         const pageElements = await getInteractiveElements(page);
         const structureString = JSON.stringify(pageElements, null, 2);
 
@@ -141,7 +176,7 @@ async function runAutonomousAgent(userGoal, onLog, agentControl, screenSize, pro
                 onLog(`... AI response was invalid. Retrying with error message (Attempt ${aiRetries + 1}/${MAX_AI_RETRIES})`);
             }
             const aiResponse = await decideNextAction(
-                userGoal, actionHistory, lastActionResult,
+                userGoal, plan, actionHistory, lastActionResult,
                 currentURL, structureString, screenshotBase64,
                 credentials, onLog, lastAiError
             );
@@ -259,11 +294,6 @@ async function runAutonomousAgent(userGoal, onLog, agentControl, screenSize, pro
             default:
                 throw new Error(`Unknown or invalid command action: ${command.action}`);
         }
-        
-        onLog("...Waiting for page to stabilize...");
-        await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {
-            onLog("...Network did not become fully idle, but continuing.");
-        });
     }
     throw new Error('Agent reached maximum steps without finishing the goal.');
   } catch (err) {

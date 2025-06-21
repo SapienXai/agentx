@@ -3,6 +3,38 @@
 const axios = require("axios");
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
+async function createPlan(userGoal, onLog = console.log) {
+    onLog(`🧠 Creating a high-level plan for goal: "${userGoal}"`);
+    const systemPrompt = `You are a web automation planner. Your task is to analyze a user's goal and create a high-level, step-by-step plan for an autonomous web agent. The plan should be logical and easy for a non-technical user to understand. The agent can search, navigate, click, type, and summarize content.
+
+You MUST respond with a JSON object with the following structure:
+{
+  "taskSummary": "A concise summary of the user's goal.",
+  "targetURL": "The most logical starting URL for the task. This could be a search engine like 'https://www.google.com' or a specific website if mentioned in the goal.",
+  "plan": [
+    { "step": "A high-level description of the first step." },
+    { "step": "A high-level description of the second step." },
+    ...
+  ]
+}`;
+    const userMessage = `Please create a plan for the following goal: "${userGoal}"`;
+    try {
+        const response = await axios.post("https://api.openai.com/v1/chat/completions", {
+            model: "gpt-4o-mini",
+            messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userMessage }],
+            max_tokens: 1000,
+            response_format: { type: "json_object" }
+        }, { headers: { "Authorization": `Bearer ${OPENAI_API_KEY}` } });
+        
+        return JSON.parse(response.data.choices[0].message.content);
+
+    } catch (error) {
+        onLog(`🚨 Plan creation failed: ${error.message}`);
+        // Return null on error. The calling function will handle this.
+        return null;
+    }
+}
+
 async function composePost(postDescription, onLog = console.log) {
     onLog(`🧠 Composing post based on description: "${postDescription}"`);
     const systemPrompt = `You are a creative and witty social media copywriter. Your task is to write a post based on a user's description. The post should be concise, engaging, and match the requested tone.`;
@@ -39,6 +71,7 @@ async function summarizeText(textToSummarize, userGoal, onLog = console.log) {
 
 async function decideNextAction(
     originalGoal,
+    plan, // +++ NEW PARAMETER +++
     previousActions, 
     lastActionResult,
     currentURL,
@@ -46,11 +79,10 @@ async function decideNextAction(
     screenshotBase64,
     credentials,
     onLog = console.log,
-    lastAiError = "" // +++ NEW PARAMETER FOR SELF-CORRECTION +++
+    lastAiError = ""
 ) {
     onLog(`🧠 Agent is thinking... What is the next best step for the goal: "${originalGoal}"`);
     
-    // +++ NEW: Add self-correction instruction if there was a previous error +++
     const selfCorrectionInstruction = lastAiError 
         ? `\n# CRITICAL CORRECTION\nOn your previous attempt, you generated an invalid command. The error was: "${lastAiError}". You MUST correct this mistake. Double-check your output to ensure it is a valid JSON object with all required keys for the chosen action.`
         : "";
@@ -59,10 +91,11 @@ async function decideNextAction(
 ${selfCorrectionInstruction}
 
 # CORE LOGIC & RULES - YOU MUST FOLLOW THESE IN ORDER
-1.  **RULE #1: HANDLE BLOCKERS & MODALS.** Before anything else, check for overlays. If a login/signup modal, cookie banner, or any other popup is blocking the page, your ONLY priority is to deal with it. This usually means clicking a "Log in", "Accept", or "Close" button. **If you are stuck in a modal you don't understand, use the \`press_escape\` action.**
-2.  **RULE #2: LOGIN IF NECESSARY.** If the goal requires being logged in and you are not, your next priority is to log in.
-3.  **RULE #3: EXECUTE THE GOAL.** Once the page is clear and you are logged in (if needed), proceed with the actions to achieve the \`originalGoal\`.
-4.  **RULE #4: FINISH.** When the goal is verifiably complete, you MUST use the \`finish\` action.
+1.  **RULE #1: ADHERE TO THE PLAN.** You have been given a high-level plan. Your primary job is to execute the steps in this plan. Use the current screen to determine the best action to accomplish the *next* logical step of the plan. Only deviate if the plan is clearly wrong or a much better opportunity presents itself, and state your reasoning in your 'thought'. If the plan mentions a specific website (e.g., "search on Google"), you MUST navigate there first.
+2.  **RULE #2: HANDLE BLOCKERS & MODALS.** Before anything else, check for overlays. If a login/signup modal, cookie banner, or any other popup is blocking the page, your ONLY priority is to deal with it. This usually means clicking a "Log in", "Accept", or "Close" button. **If you are stuck in a modal you don't understand, use the \`press_escape\` action.**
+3.  **RULE #3: LOGIN IF NECESSARY.** If the goal requires being logged in and you are not, your next priority is to log in.
+4.  **RULE #4: EXECUTE THE GOAL.** Once the page is clear and you are logged in (if needed), proceed with the actions to achieve the \`originalGoal\` by following the plan.
+5.  **RULE #5: FINISH.** When the goal is verifiably complete, you MUST use the \`finish\` action.
 
 # AVAILABLE ACTIONS (JSON FORMAT ONLY) - Adhere strictly to this schema.
 
@@ -85,9 +118,16 @@ ${selfCorrectionInstruction}
         historyLog = previousActions.map((action, index) => `${index + 1}. ${JSON.stringify(action)}`).join('\n');
     }
 
+    const planSteps = plan.plan.map((p, i) => `${i + 1}. ${p.step}`).join('\n');
+
     const userPrompt = `
 ## Original Goal
 "${originalGoal}"
+
+## High-Level Strategic Plan (Follow This!)
+Initial URL: ${plan.targetURL}
+Steps:
+${planSteps}
 
 ## Current URL
 \`${currentURL}\`
@@ -108,7 +148,7 @@ ${lastActionResult || "N/A"}
 ${pageStructure}
 \`\`\`
 
-**Your Task:** Following the CORE LOGIC & RULES, look at the screenshot and elements. Decide the single best next action to achieve the original goal. Output a single, valid JSON object that strictly follows the schema.`;
+**Your Task:** Following the CORE LOGIC & RULES, look at the screenshot and elements. Decide the single best next action to achieve the original goal by following the high-level plan. Output a single, valid JSON object that strictly follows the schema.`;
 
     const messages = [
         { role: "system", content: systemPrompt },
@@ -148,4 +188,4 @@ ${pageStructure}
     }
 }
 
-module.exports = { decideNextAction, summarizeText, composePost };
+module.exports = { createPlan, decideNextAction, summarizeText, composePost };

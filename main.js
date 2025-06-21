@@ -17,7 +17,8 @@ const os = require('os');
 const qrcode = require('qrcode');
 const cron = require('node-cron');
 const fs = require('fs');
-// We no longer need createPlan from here
+// We will now use createPlan from agent_api
+const { createPlan } = require('./agent_api.js');
 const { runAutonomousAgent } = require('./playwright_executor.js');
 
 const PORT = process.env.PORT || 3000;
@@ -107,7 +108,8 @@ function createWindow(win) {
         }
 
         isAgentRunning = true;
-        const { userGoal, taskId } = taskQueue.shift();
+        const { taskPlan, taskId } = taskQueue.shift(); // +++ Get the whole plan
+        const userGoal = taskPlan.taskSummary;
         const taskLogger = (message) => broadcast(`${taskId}::log::${message}`);
 
         try {
@@ -119,13 +121,12 @@ function createWindow(win) {
             taskLogger(`▶️ Agent starting execution for: "${userGoal}"`);
             await runAutonomousAgent(
                 userGoal, 
+                taskPlan, // +++ Pass the plan to the executor
                 taskLogger, 
                 agentControls[taskId], 
                 screenSize, 
                 promptForCredentials
             );
-            // The agent now signals its own completion, so this specific line can be removed or kept for redundancy.
-            // taskLogger('✅ Agent finished successfully!');
             broadcast(`${taskId}::TASK_STATUS_UPDATE::completed`);
             
         } catch (error) {
@@ -154,34 +155,47 @@ function createWindow(win) {
         }
     });
 
-    // MODIFIED: This endpoint now returns a "dummy" plan to satisfy the UI.
     expressApp.post('/api/get-plan', async (req, res) => {
         const goal = req.body.goal;
-        console.log(`Received goal: "${goal}". Creating dummy plan for UI.`);
-        const dummyPlan = {
-            taskSummary: goal,
-            plan: [{ step: "Agent will decide the best course of action dynamically." }],
-            isRecurring: false,
-            requiresLogin: false, // Let agent determine this at runtime
-            targetURL: "about:blank",
-            searchTerm: goal.split(' ').slice(0, 2).join(' '),
-            schedule: "",
-            cron: ""
-        };
-        res.json({ success: true, plan: dummyPlan });
+        console.log(`Received goal: "${goal}". Generating plan with AI.`);
+        
+        const aiPlan = await createPlan(goal, (msg) => console.log(`[PlanGen] ${msg}`));
+
+        if (aiPlan) {
+            const fullPlan = {
+                ...aiPlan,
+                isRecurring: false,
+                requiresLogin: false, 
+                searchTerm: goal.split(' ').slice(0, 4).join(' '),
+                schedule: "",
+                cron: ""
+            };
+            res.json({ success: true, plan: fullPlan });
+        } else {
+            console.log(`AI plan generation failed. Creating dummy plan for UI.`);
+            const dummyPlan = {
+                taskSummary: goal,
+                plan: [{ step: "Agent will decide the best course of action dynamically (AI planner failed)." }],
+                isRecurring: false,
+                requiresLogin: false,
+                targetURL: "about:blank",
+                searchTerm: goal.split(' ').slice(0, 2).join(' '),
+                schedule: "",
+                cron: ""
+            };
+            res.json({ success: true, plan: dummyPlan });
+        }
     });
 
-    // MODIFIED: This endpoint now queues the raw goal, not a plan.
+    // MODIFIED: This endpoint now queues the entire plan object.
     expressApp.post('/api/run-task', async (req, res) => {
         const { plan, taskId } = req.body;
-        const userGoal = plan.taskSummary; // The real goal is the summary.
         
         if (plan.isRecurring) {
-            // Deferring full scheduling implementation
             broadcast(`${taskId}::log::⚠️ Scheduling is not fully implemented in this version.`);
             res.status(400).json({ success: false, error: "Scheduling not implemented." });
         } else {
-            taskQueue.push({ userGoal, taskId });
+            taskQueue.push({ taskPlan: plan, taskId }); // +++ Queue the whole plan object
             broadcast(`${taskId}::log::✅ Task has been added to the queue.`);
             res.json({ success: true, queued: true });
             processQueue();
