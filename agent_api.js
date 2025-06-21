@@ -30,7 +30,6 @@ You MUST respond with a JSON object with the following structure:
 
     } catch (error) {
         onLog(`🚨 Plan creation failed: ${error.message}`);
-        // Return null on error. The calling function will handle this.
         return null;
     }
 }
@@ -91,15 +90,24 @@ async function decideNextAction(
 ${selfCorrectionInstruction}
 
 # CORE LOGIC & RULES - YOU MUST FOLLOW THESE IN ORDER
-1.  **RULE #1: ADHERE TO THE PLAN.** Your primary job is to execute the steps in the provided high-level plan. Use the current screen to determine the best action to accomplish the *next* logical step of the plan.
-2.  **RULE #2: HANDLE BLOCKERS.** Before anything else, check for overlays.
+1.  **RULE #1: HANDLE BLOCKERS.** Your first priority is to handle anything blocking the page content.
     *   **CAPTCHA/BOT-CHECKS:** If you see a CAPTCHA ("I'm not a robot", etc.), you CANNOT solve it. You MUST use the \`request_human_intervention\` action immediately.
-    *   **MODALS:** For login/signup modals, cookie banners, etc., your priority is to deal with it by clicking a "Log in", "Accept", or "Close" button. If you are stuck in a modal you don't understand, use the \`press_escape\` action.
-3.  **RULE #3: DON'T GET STUCK.** If you are instructed that you are in a loop (your previous actions did not change the page), you MUST take a DIFFERENT action. Try scrolling, waiting, or if completely blocked, use \`request_human_intervention\`.
-4.  **RULE #4: FINISH.** When the goal is verifiably complete, you MUST use the \`finish\` action.
+    *   **MODALS:** For cookie banners, popups, etc., your priority is to click "Accept", "Close", or a similar button. If you are stuck in a modal you don't understand, use the \`press_escape\` action.
+
+2.  **RULE #2: LOGIN PROCEDURE.** If the goal requires you to be logged in (e.g., posting content, accessing an account), you must follow this procedure strictly:
+    *   **A) CHECK IF ALREADY LOGGED IN:** Look at the screenshot for signs you are already logged in (e.g., a profile picture, a 'Logout' button, a personalized dashboard). If you are logged in, proceed to Rule #3.
+    *   **B) CHECK FOR CREDENTIALS:** If you are on a login page, check the \`Credentials Found\` status provided below.
+    *   **C) DECIDE ACTION:**
+        *   If \`Credentials Found\` is **'Yes'**: Your next actions should be to \`type\` the username and password into the correct fields.
+        *   If \`Credentials Found\` is **'No'**: You MUST use the \`request_credentials\` action. **Do NOT try to type placeholder text like '<email>' or '<password>'.** This is a critical instruction.
+
+3.  **RULE #3: EXECUTE THE GOAL.** Once the page is clear and you are logged in (if needed), proceed with the actions to achieve the \`originalGoal\` by following the high-level plan.
+
+4.  **RULE #4: DON'T GET STUCK.** If you are instructed that you are in a loop (your previous actions did not change the page), you MUST take a DIFFERENT action. Try scrolling, waiting, or if completely blocked, use \`request_human_intervention\`.
+
+5.  **RULE #5: FINISH.** When the goal is verifiably complete, you MUST use the \`finish\` action.
 
 # AVAILABLE ACTIONS (JSON FORMAT ONLY) - Adhere strictly to this schema.
-
 *   **\`navigate\`**: \`{"thought": "...", "action": "navigate", "url": "..."}\`
 *   **\`click\`**: \`{"thought": "...", "action": "click", "bx_id": "..."}\`
 *   **\`type\`**: \`{"thought": "...", "action": "type", "bx_id": "...", "text": "..."}\`
