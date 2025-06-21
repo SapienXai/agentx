@@ -51,7 +51,14 @@
                 <div id="queue-list" class="task-list" style="display: none;"></div>
                 <div id="scheduled-tasks" class="task-list" style="display: none;"></div>
                 <div id="archived-tasks" class="task-list" style="display: none;"></div>
-                <p id="no-tasks-message" class="text-muted">No tasks yet. Create one above to get started!</p>
+                
+                <!-- NEW: Better Empty State -->
+                <div id="no-tasks-message" class="empty-state d-none">
+                    <svg class="empty-state-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zM8.5 12c.83 0 1.5-.67 1.5-1.5S9.33 9 8.5 9 7 9.67 7 10.5 7.67 12 8.5 12zm7 0c.83 0 1.5-.67 1.5-1.5S16.33 9 15.5 9s-1.5.67-1.5 1.5.67 1.5 1.5 1.5zm-4.03 3.44c1.33.67 2.73.67 4.06 0 .23-.11.38-.34.35-.59-.03-.25-.23-.45-.48-.51-1.12-.28-2.3-.28-3.42 0-.25.06-.45.26-.48.51-.03.25.11.48.35.59z"/></svg>
+                    <h3>Ready for my first mission!</h3>
+                    <p class="text-muted">Create a task above to get started.</p>
+                </div>
+
             </div>
         </main>
     </div>
@@ -87,19 +94,8 @@
         </div>
     </div>
 
-    <!-- Human Intervention Modal (New) -->
-    <div id="human-input-modal" class="modal-overlay d-none">
-        <div class="modal-content">
-            <button id="close-human-input-modal-button" class="close-btn">×</button>
-            <h3>Human Intervention Required</h3>
-            <p class="text-muted">The agent is paused because it needs your help. Please complete the action in the browser.</p>
-            <div class="intervention-reason">
-                <strong>Reason:</strong> <span id="human-input-reason">Loading...</span>
-            </div>
-            <button id="human-input-done-button" class="primary">I'm Done, Continue Agent</button>
-        </div>
-    </div>
-
+    <!-- NEW: Toast Notification Container -->
+    <div id="toast-container"></div>
 
     <script src="./progress.js"></script>
     <script src="./renderer.js"></script>

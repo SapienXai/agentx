@@ -13,7 +13,7 @@ const MAX_AI_RETRIES = 3;
 const CREDENTIALS_PATH = path.join(__dirname, 'credential_store.json');
 const USER_DATA_DIR = path.join(__dirname, 'playwright_session_data');
 
-async function getInteractiveElements(page, onLog) { // +++ FIX: Pass onLog as a parameter
+async function getInteractiveElements(page, onLog) {
     try {
         await page.evaluate(() => {
             document.querySelectorAll('[data-bx-id]').forEach(el => el.removeAttribute('data-bx-id'));
@@ -56,7 +56,7 @@ async function getInteractiveElements(page, onLog) { // +++ FIX: Pass onLog as a
         return elements;
     } catch (error) {
          if (error.message.includes('Execution context was destroyed')) {
-            onLog("...Page navigated before analysis could complete. The step will be retried."); // +++ FIX: This now works correctly
+            onLog("...Page navigated before analysis could complete. The step will be retried.");
             return []; 
         } else {
             throw error;
@@ -109,16 +109,15 @@ async function runAutonomousAgent(userGoal, plan, onLog, agentControl, screenSiz
   
   let page = context.pages().length > 0 ? context.pages()[0] : await context.newPage();
   
-  onLog(`🧭 Navigating to initial URL from plan: ${plan.targetURL}`);
-  await page.goto(plan.targetURL || 'https://www.google.com', { waitUntil: 'domcontentloaded' });
-
+  // +++ FIX: Start at a blank page to ensure the loop is always entered +++
+  await page.goto('about:blank');
 
   const tracePath = path.join(__dirname, `trace_${Date.now()}.zip`);
   await context.tracing.start({ screenshots: true, snapshots: true, sources: true });
   onLog(`📊 Trace file will be saved to: ${tracePath}`);
   
   let actionHistory = [];
-  let lastActionResult = null;
+  let lastActionResult = { status: "success", message: "Agent started. Initial navigation required." };
 
   try {
     for (let i = 0; i < MAX_AGENT_STEPS; i++) {
@@ -130,10 +129,10 @@ async function runAutonomousAgent(userGoal, plan, onLog, agentControl, screenSiz
         const credentials = getCredentialsForUrl(currentURL);
         
         onLog("Visual analysis: Labeling interactive elements...");
-        const pageElements = await getInteractiveElements(page, onLog); // +++ FIX: Pass onLog here
-        if (pageElements.length === 0) {
-            onLog("...No elements found, likely due to a recent navigation. Retrying step...");
-            await page.waitForLoadState('domcontentloaded', { timeout: 10000 });
+        const pageElements = await getInteractiveElements(page, onLog);
+        if (pageElements.length === 0 && currentURL !== 'about:blank') {
+            onLog("...No elements found, likely due to a page navigation or an empty page. Retrying step...");
+            await page.waitForLoadState('domcontentloaded', { timeout: 10000 }).catch(() => {});
             continue;
         }
 
@@ -144,161 +143,142 @@ async function runAutonomousAgent(userGoal, plan, onLog, agentControl, screenSiz
         const annotatedScreenshot = await annotateScreenshot(rawScreenshot, pageElements);
         const screenshotBase64 = annotatedScreenshot.toString('base64');
         
-        let truncatedResult = lastActionResult;
-        if (truncatedResult && truncatedResult.length > 500) {
-            truncatedResult = truncatedResult.slice(0, 500) + '... [truncated]';
-        }
-
         let command;
         let commandIsValid = false;
         let aiRetries = 0;
         let lastAiError = "";
 
-        while (aiRetries < MAX_AI_RETRIES && !commandIsValid) {
-            if (aiRetries > 0) {
-                onLog(`... AI response was invalid. Retrying with error message (Attempt ${aiRetries + 1}/${MAX_AI_RETRIES})`);
+        // +++ FIX: Handle initial navigation as part of the loop +++
+        if (currentURL === 'about:blank') {
+            onLog("Initial state detected, forcing navigation to target URL.");
+            command = {
+                thought: `The page is blank. I must navigate to the starting URL from the plan: ${plan.targetURL}`,
+                action: 'navigate',
+                url: plan.targetURL
             }
-            const aiResponse = await decideNextAction(
-                userGoal, plan, actionHistory, lastActionResult,
-                currentURL, structureString, screenshotBase64,
-                credentials, onLog, lastAiError
-            );
+        } else {
+             while (aiRetries < MAX_AI_RETRIES && !commandIsValid) {
+                if (aiRetries > 0) {
+                    onLog(`... AI response was invalid. Retrying with error message (Attempt ${aiRetries + 1}/${MAX_AI_RETRIES})`);
+                }
+                const aiResponse = await decideNextAction(
+                    userGoal, plan, actionHistory, lastActionResult,
+                    currentURL, structureString, screenshotBase64,
+                    credentials, onLog, lastAiError
+                );
 
-            command = aiResponse;
-            
-            switch(command.action) {
-                case 'type':
-                    if (command.bx_id && command.text !== undefined) commandIsValid = true;
-                    else lastAiError = "Invalid `type` action. It must include both `bx_id` and `text` keys.";
-                    break;
-                case 'compose_text':
-                    if (command.bx_id && command.description) commandIsValid = true;
-                    else lastAiError = "Invalid `compose_text` action. It must include both `bx_id` and `description` keys.";
-                    break;
-                case 'click':
-                case 'scrape_text':
-                case 'summarize':
-                    if (command.bx_id) commandIsValid = true;
-                    else lastAiError = `Invalid \`${command.action}\` action. It must include a \`bx_id\` key.`;
-                    break;
-                case 'navigate':
-                    if (command.url) commandIsValid = true;
-                    else lastAiError = "Invalid `navigate` action. It must include a `url` key.";
-                    break;
-                case 'scroll':
-                    if (command.direction) commandIsValid = true;
-                    else lastAiError = "Invalid `scroll` action. It must include a `direction` key.";
-                    break;
-                default:
+                command = aiResponse;
+                
+                if (command && command.action) {
                     commandIsValid = true;
-                    break;
+                } else {
+                    lastAiError = "Invalid JSON structure. The response must contain an 'action' key.";
+                    aiRetries++;
+                }
             }
-            if (!commandIsValid) aiRetries++;
         }
-
-        if (!commandIsValid) {
+       
+        if (!command) {
             throw new Error(`AI failed to provide a valid command after ${MAX_AI_RETRIES} attempts. Last error: ${lastAiError}`);
         }
-
-        lastActionResult = null;
-
+        
         if (command.thought) onLog(`🧠 Agent Thought: ${command.thought}`);
         actionHistory.push(command);
         if (actionHistory.length > MAX_ACTION_HISTORY) actionHistory.shift();
 
-        switch (command.action) {
-            case 'navigate':
-                onLog(`▶️ Action: Navigating to ${command.url}`);
-                await page.goto(command.url, { waitUntil: 'domcontentloaded', timeout: 30000 });
-                break;
-            case 'type':
-                onLog(`▶️ Action: Typing "${command.text}" into element ${command.bx_id}`);
-                await page.locator(`[data-bx-id="${command.bx_id}"]`).fill(command.text);
-                break;
-            case 'compose_text':
-                 onLog(`▶️ Action: Composing text for element ${command.bx_id} with description: "${command.description}"`);
-                 const postContent = await composePost(command.description, onLog);
-                 onLog(`   ... Composed Text: "${postContent}"`);
-                 await page.locator(`[data-bx-id="${command.bx_id}"]`).fill(postContent);
-                 lastActionResult = `Composed and typed post: "${postContent}"`;
-                 break;
-            case 'click':
-                onLog(`▶️ Action: Clicking element ${command.bx_id}`);
-                const initialPageCount = context.pages().length;
-                await page.locator(`[data-bx-id="${command.bx_id}"]`).click({ force: true, timeout: 10000 });
-                
-                onLog("...Waiting for page to react to click...");
-                await sleep(2000); 
+        try {
+            switch (command.action) {
+                case 'navigate':
+                    onLog(`▶️ Action: Navigating to ${command.url}`);
+                    await page.goto(command.url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+                    lastActionResult = { status: "success", message: `Successfully navigated to ${command.url}` };
+                    break;
+                case 'type':
+                    onLog(`▶️ Action: Typing into element ${command.bx_id}`);
+                    await page.locator(`[data-bx-id="${command.bx_id}"]`).fill(command.text);
+                    lastActionResult = { status: "success", message: `Successfully typed into element ${command.bx_id}.` };
+                    break;
+                case 'click':
+                    onLog(`▶️ Action: Clicking element ${command.bx_id}`);
+                    const initialPageCount = context.pages().length;
+                    await page.locator(`[data-bx-id="${command.bx_id}"]`).click({ force: true, timeout: 10000 });
+                    
+                    onLog("...Waiting for page to react to click...");
+                    await sleep(2000); 
 
-                if (context.pages().length > initialPageCount) {
-                    onLog("✅ Detected new tab. Switching focus.");
-                    page = context.pages()[context.pages().length - 1]; 
-                    await page.bringToFront();
-                    await page.waitForLoadState('domcontentloaded', { timeout: 15000 }).catch(() => onLog("...New tab did not fully load, but continuing."));
-                } else {
-                    onLog("...No new tab detected. Waiting for same-page navigation...");
-                    await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => onLog("...Network did not become fully idle, but continuing."));
-                }
-                break;
-            case 'press_enter':
-                 onLog(`▶️ Action: Pressing 'Enter' key.`);
-                 await page.keyboard.press('Enter');
-                 onLog("...Waiting for page to react to 'Enter' key...");
-                 await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => onLog("...Network did not become fully idle, but continuing."));
-                 break;
-            case 'press_escape':
-                 onLog(`▶️ Action: Pressing 'Escape' key to close modal.`);
-                 await page.keyboard.press('Escape');
-                 await sleep(1000);
-                 break;
-            case 'scroll':
-                onLog(`▶️ Action: Scrolling ${command.direction}.`);
-                await page.evaluate(dir => {
-                    window.scrollBy(0, dir === 'down' ? window.innerHeight * 0.7 : -window.innerHeight * 0.7);
-                }, command.direction);
-                await sleep(1000);
-                break;
-            case 'scrape_text':
-                 onLog(`▶️ Action: Scraping text from element ${command.bx_id}`);
-                 const scrapedText = await page.locator(`[data-bx-id="${command.bx_id}"]`).innerText();
-                 lastActionResult = scrapedText;
-                 onLog(`   ... Scraped Text: "${scrapedText.slice(0, 100)}..."`);
-                 break;
-            case 'summarize':
-                 onLog(`▶️ Action: Summarizing text from element ${command.bx_id}`);
-                 const textToSummarize = await page.locator(`[data-bx-id="${command.bx_id}"]`).innerText();
-                 const summary = await summarizeText(textToSummarize, userGoal);
-                 lastActionResult = summary;
-                 onLog(`   ... Summary: "${summary.slice(0, 150)}..."`);
-                 break;
-            case 'request_credentials':
-                 onLog(`⏸️ Action: Agent requires credentials. Reason: ${command.reason}`);
-                 onLog('🟡 Please provide the credentials in the main application window.');
-                 const urlObject = new URL(page.url());
-                 const domain = urlObject.hostname.replace('www.', '');
-                 try {
+                    if (context.pages().length > initialPageCount) {
+                        onLog("✅ Detected new tab. Switching focus.");
+                        page = context.pages()[context.pages().length - 1]; 
+                        await page.bringToFront();
+                        await page.waitForLoadState('domcontentloaded', { timeout: 15000 }).catch(() => onLog("...New tab did not fully load, but continuing."));
+                    } else {
+                        onLog("...No new tab detected. Waiting for same-page navigation...");
+                        await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => onLog("...Network did not become fully idle, but continuing."));
+                    }
+                    lastActionResult = { status: "success", message: `Successfully clicked element ${command.bx_id}.` };
+                    break;
+                case 'press_enter':
+                     onLog(`▶️ Action: Pressing 'Enter' key.`);
+                     await page.keyboard.press('Enter');
+                     onLog("...Waiting for page to react to 'Enter' key...");
+                     await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => onLog("...Network did not become fully idle, but continuing."));
+                     lastActionResult = { status: "success", message: `Successfully pressed 'Enter'.` };
+                     break;
+                case 'press_escape':
+                     onLog(`▶️ Action: Pressing 'Escape' key.`);
+                     await page.keyboard.press('Escape');
+                     await sleep(1000);
+                     lastActionResult = { status: "success", message: `Successfully pressed 'Escape'.` };
+                     break;
+                case 'scroll':
+                    onLog(`▶️ Action: Scrolling ${command.direction}.`);
+                    await page.evaluate(dir => {
+                        window.scrollBy(0, dir === 'down' ? window.innerHeight * 0.7 : -window.innerHeight * 0.7);
+                    }, command.direction);
+                    await sleep(1000);
+                    lastActionResult = { status: "success", message: `Successfully scrolled ${command.direction}.` };
+                    break;
+                case 'scrape_text':
+                     onLog(`▶️ Action: Scraping text from ${command.bx_id}`);
+                     const scrapedText = await page.locator(`[data-bx-id="${command.bx_id}"]`).innerText();
+                     lastActionResult = { status: "success", message: scrapedText };
+                     onLog(`   ... Scraped Text: "${scrapedText.slice(0, 100)}..."`);
+                     break;
+                case 'summarize':
+                     onLog(`▶️ Action: Summarizing text from ${command.bx_id}`);
+                     const textToSummarize = await page.locator(`[data-bx-id="${command.bx_id}"]`).innerText();
+                     const summary = await summarizeText(textToSummarize, userGoal);
+                     lastActionResult = { status: "success", message: summary };
+                     onLog(`   ... Summary: "${summary.slice(0, 150)}..."`);
+                     break;
+                case 'request_credentials':
+                     onLog(`⏸️ Action: Requesting credentials.`);
+                     const urlObject = new URL(page.url());
+                     const domain = urlObject.hostname.replace('www.', '');
                      await promptForCredentials(domain); 
                      onLog('✅ Credentials received. Resuming agent...');
-                 } catch (e) {
-                     throw new Error('User canceled credential entry.');
-                 }
-                 break;
-            case 'wait':
-                onLog(`⏸️ Action: Wait. Reason: ${command.reason}`);
-                await sleep(5000);
-                onLog('✅ Resuming agent...');
-                break;
-            case 'finish':
-                onLog(`🎉 GOAL ACHIEVED! Summary: ${command.summary}`);
-                onLog(`✅ Agent finished successfully!`);
-                return command.summary;
-            default:
-                throw new Error(`Unknown or invalid command action: ${command.action}`);
+                     lastActionResult = { status: "success", message: `Credentials for ${domain} were provided.` };
+                     break;
+                case 'wait':
+                    onLog(`⏸️ Action: Waiting.`);
+                    await sleep(5000);
+                    lastActionResult = { status: "success", message: `Waited for 5 seconds.` };
+                    break;
+                case 'finish':
+                    onLog(`🎉 GOAL ACHIEVED! Summary: ${command.summary}`);
+                    onLog(`✅ Agent finished successfully!`);
+                    return command.summary;
+                default:
+                    throw new Error(`Unknown command action: ${command.action}`);
+            }
+        } catch (error) {
+            onLog(`🚨 Action Failed: ${error.message.split('\n')[0]}`);
+            lastActionResult = { status: "error", message: `Action '${command.action}' failed. Error: ${error.message}` };
         }
     }
     throw new Error('Agent reached maximum steps without finishing the goal.');
   } catch (err) {
-    onLog(`🚨 Playwright Failure: ${err.message}`);
+    onLog(`🚨 FATAL ERROR: ${err.message}`);
     if (!page.isClosed()) {
         const errorScreenshotPath = path.join(__dirname, 'error-screenshot.png');
         await page.screenshot({ path: errorScreenshotPath, fullPage: true });

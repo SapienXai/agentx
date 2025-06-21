@@ -92,10 +92,31 @@ body {
 .tabs a.active { color: var(--text-bright); }
 .tabs a.active::after { content: ''; position: absolute; bottom: -1px; left: 0; right: 0; height: 2px; background-color: var(--text-bright); }
 .task-list { display: flex; flex-direction: column; gap: 15px; }
-#no-tasks-message { text-align: center; padding: 40px 20px; }
+
+/* --- NEW: Empty State Styling --- */
+.empty-state {
+    text-align: center;
+    padding: 60px 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 15px;
+    opacity: 0.6;
+}
+.empty-state-icon {
+    width: 80px;
+    height: 80px;
+    color: var(--text-secondary);
+}
+.empty-state h3 {
+    font-size: 18px;
+    font-weight: 500;
+    color: var(--text-primary);
+}
 
 /* --- Task Item Styling --- */
-.task-item { background-color: var(--surface-color); border-radius: 12px; overflow: hidden; transition: background-color 0.2s ease; animation: pop-in 0.4s cubic-bezier(0.34, 1.56, 0.64, 1); }
+.task-item { background-color: var(--surface-color); border-radius: 12px; overflow: hidden; transition: background-color 0.2s ease, opacity 0.3s, transform 0.3s; animation: pop-in 0.4s cubic-bezier(0.34, 1.56, 0.64, 1); }
+.task-item.archiving { opacity: 0; transform: scale(0.95); } /* For archive animation */
 @keyframes pop-in { from { transform: scale(0.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 .task-item[open] { background-color: var(--surface-active); }
 .task-summary { display: flex; justify-content: space-between; align-items: center; padding: 15px; cursor: pointer; list-style: none; }
@@ -105,6 +126,9 @@ body {
 .task-info h3 { font-size: 17px; font-weight: 500; margin-bottom: 4px; }
 .task-info p { font-size: 14px; color: var(--text-secondary); }
 .task-details-content { padding: 0 20px 20px 20px; border-top: 1px solid var(--border-color); margin: 0 15px; color: #B0B0B0; font-size: 14px; line-height: 1.6; }
+.task-item .task-details-content { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 0.3s ease-in-out; } /* Animation for expand/collapse */
+.task-item[open] .task-details-content { grid-template-rows: 1fr; }
+.task-details-content > * { overflow: hidden; }
 .task-details-content h4 { font-size: 14px; font-weight: 600; color: var(--text-primary); margin-top: 15px; margin-bottom: 8px; }
 .plan-details { background-color: rgba(0,0,0,0.2); padding: 12px; border-radius: 8px; border-left: 3px solid var(--status-pending-border); }
 .plan-details p { margin-bottom: 8px; }
@@ -118,28 +142,9 @@ pre.status-log { background-color: var(--bg-color); padding: 12px; border-radius
 .task-action-btn:active { transform: scale(0.96); }
 .run-count-info { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--status-scheduled-text); background-color: rgba(0,0,0,0.2); padding: 6px 10px; border-radius: 8px; margin-top: 15px; }
 
-/* +++ NEW: Task Result Card Styling +++ */
-.task-result {
-    background-color: var(--status-running-bg);
-    border-left: 4px solid var(--status-running-text);
-    padding: 15px 20px;
-    margin-bottom: 20px;
-    border-radius: 8px;
-}
-.task-result h4 {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    color: var(--status-running-text);
-    font-size: 16px;
-    margin-top: 0;
-    margin-bottom: 10px;
-}
-.task-result p {
-    font-size: 15px;
-    line-height: 1.6;
-    color: var(--text-primary);
-}
+.task-result { background-color: var(--status-running-bg); border-left: 4px solid var(--status-running-text); padding: 15px 20px; margin-bottom: 20px; border-radius: 8px; }
+.task-result h4 { display: flex; align-items: center; gap: 10px; color: var(--status-running-text); font-size: 16px; margin-top: 0; margin-bottom: 10px; }
+.task-result p { font-size: 15px; line-height: 1.6; color: var(--text-primary); }
 
 /* --- Task Status --- */
 .task-status { display: flex; align-items: center; gap: 15px; }
@@ -163,7 +168,7 @@ pre.status-log { background-color: var(--bg-color); padding: 12px; border-radius
 /* --- Connect Button & Modal --- */
 .connect-btn { position: absolute; top: 0; right: 0; background: none; border: none; color: var(--text-secondary); font-size: 24px; cursor: pointer; padding: 10px; transition: color 0.2s; }
 .connect-btn:hover { color: var(--text-bright); }
-.modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.7); backdrop-filter: blur(5px); display: flex; justify-content: center; align-items: center; z-index: 1000; }
+.modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.7); backdrop-filter: blur(5px); display: flex; justify-content: center; align-items: center; z-index: 1000; animation: fade-in 0.3s; }
 .modal-content { background-color: var(--surface-color); padding: 30px; border-radius: 16px; text-align: center; max-width: 400px; width: 90%; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3); position: relative; }
 .close-btn { position: absolute; top: 10px; right: 15px; background: none; border: none; color: var(--text-secondary); font-size: 28px; cursor: pointer; line-height: 1; }
 .qr-code-wrapper { background-color: white; border-radius: 8px; padding: 15px; margin: 20px auto; width: 200px; height: 200px; display: flex; justify-content: center; align-items: center; }
@@ -172,13 +177,21 @@ code#connect-url { background-color: var(--bg-color); padding: 5px 10px; border-
 
 /* --- Credentials Modal Styles --- */
 .credentials-form { display: flex; flex-direction: column; gap: 15px; margin-top: 20px; }
-.credentials-form input { background-color: var(--bg-color); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 8px; padding: 12px; font-size: 16px; outline: none; }
+.credentials-form input { background-color: var(--bg-color); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 8px; padding: 12px; font-size: 16px; outline: none; transition: box-shadow 0.2s; }
 .credentials-form input:focus { border-color: var(--focus-ring); box-shadow: 0 0 0 2px rgba(90, 72, 148, 0.4); }
 .credentials-form button { color: var(--text-bright); background-color: var(--primary-action); border: none; border-radius: 20px; padding: 12px 15px; font-size: 15px; font-weight: 600; cursor: pointer; transition: background-color 0.2s; }
 .credentials-form button:hover { background-color: var(--primary-action-hover); }
 
-/* --- Utility --- */
+/* --- NEW: Toast Notification Styles --- */
+#toast-container { position: fixed; bottom: 20px; right: 20px; z-index: 2000; display: flex; flex-direction: column; gap: 10px; }
+.toast { background-color: var(--surface-color); color: var(--text-primary); padding: 15px 20px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); border-left: 4px solid var(--text-secondary); opacity: 0; transform: translateX(100%); transition: opacity 0.3s ease, transform 0.3s ease; }
+.toast.show { opacity: 1; transform: translateX(0); }
+.toast.error { border-left-color: var(--status-failed-border); }
+.toast.success { border-left-color: var(--status-running-border); }
+
+/* --- Utility & Animation --- */
 .d-none { display: none !important; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); border: 0; }
 .spinner-border { display: inline-block; width: 3rem; height: 3rem; vertical-align: text-bottom; border: .25em solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spinner-border .75s linear infinite; }
 @keyframes spinner-border { to { transform: rotate(360deg); } }
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }

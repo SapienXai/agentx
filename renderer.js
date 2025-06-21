@@ -14,6 +14,7 @@ const archivedTasksList = document.getElementById('archived-tasks');
 const noTasksMessage = document.getElementById('no-tasks-message');
 const tabLinks = document.querySelectorAll('.tab-link');
 const taskListsWrapper = document.getElementById('task-lists-wrapper');
+const toastContainer = document.getElementById('toast-container');
 
 // QR Modal Selectors
 const qrModal = document.getElementById('qr-modal');
@@ -30,6 +31,24 @@ const credentialsForm = document.getElementById('credentials-form');
 const credentialDomain = document.getElementById('credential-domain');
 const usernameInput = document.getElementById('username-input');
 const passwordInput = document.getElementById('password-input');
+
+// --- NEW: Toast Notification Logic ---
+function showToast(message, type = 'info') {
+    const toast = document.createElement('div');
+    toast.className = `toast ${type}`;
+    toast.textContent = message;
+
+    toastContainer.appendChild(toast);
+
+    setTimeout(() => {
+        toast.classList.add('show');
+    }, 100); // Small delay to allow element to be added to DOM before transition
+
+    setTimeout(() => {
+        toast.classList.remove('show');
+        toast.addEventListener('transitionend', () => toast.remove());
+    }, 5000); // Toast disappears after 5 seconds
+}
 
 // --- WEBSOCKET ---
 const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -58,11 +77,10 @@ socket.onmessage = (event) => {
         renderTasks();
         return;
     }
-
-    // +++ NEW: Handle the final result from the agent +++
+    
     if (command === 'TASK_RESULT') {
         taskToUpdate.result = payload;
-        renderTasks(); // Re-render to show the new result card
+        renderTasks();
         return;
     }
 
@@ -92,7 +110,6 @@ socket.onopen = () => console.log('WebSocket connection established.');
 socket.onerror = (error) => console.error('WebSocket Error:', error);
 
 // --- UI RENDERING ---
-
 const getStatusPill = (status) => {
     if (status === 'running') return `<div class="status-pill status-running"><span class="running-indicator"></span>Running</div>`;
     if (status === 'scheduled') return `<div class="status-pill status-scheduled">Scheduled</div>`;
@@ -146,9 +163,9 @@ const getTaskActions = (task) => {
 };
 
 const getTaskDetails = (task) => {
+    let contentWrapper = document.createElement('div');
     let content = '';
 
-    // +++ NEW: Display the result card if the task is completed and has a result +++
     if (task.status === 'completed' && task.result) {
         const formattedResult = task.result.replace(/\n/g, '<br>');
         content += `<div class="task-result">
@@ -159,16 +176,16 @@ const getTaskDetails = (task) => {
     
     if (task.plan && task.status !== 'completed') {
         const planSteps = task.plan.plan.map(p => `<li>${p.step}</li>`).join('');
-        content += `<h4>Proposed Plan</h4><div class="plan-details">
+        content += `<div><h4>Proposed Plan</h4><div class="plan-details">
             ${task.plan.isRecurring ? `<p><strong>Schedule:</strong> <i class="bi bi-clock-history" title="Recurring task"></i> ${task.plan.schedule}</p>` : ''}
             <p><strong>Initial URL:</strong> <code>${task.plan.targetURL}</code></p>
             <p><strong>Steps:</strong></p>
             <ol style="margin-left: 20px; padding-left: 10px;">${planSteps}</ol>
-        </div>`;
+        </div></div>`;
     }
 
     if (task.log) {
-        content += `<h4>Agent Log</h4><pre class="status-log">${task.log}</pre>`;
+        content += `<div><h4>Agent Log</h4><pre class="status-log">${task.log}</pre></div>`;
     }
     
     if (task.isRecurring) {
@@ -179,7 +196,9 @@ const getTaskDetails = (task) => {
     }
     
     content += `<div class="task-actions">${getTaskActions(task)}</div>`;
-    return content;
+    
+    contentWrapper.innerHTML = content;
+    return contentWrapper;
 };
 
 const createTaskElement = (task) => {
@@ -190,14 +209,21 @@ const createTaskElement = (task) => {
         details.open = true;
     }
 
-    details.innerHTML = `<summary class="task-summary">
-            <div class="task-info">
+    const summary = document.createElement('summary');
+    summary.className = 'task-summary';
+    summary.innerHTML = `<div class="task-info">
                 <h3>${task.summary}</h3>
                 <p>${new Date(task.startTime).toLocaleString()}</p>
             </div>
-            <div class="task-status">${getStatusPill(task.status)}${getProgressBar(task)}</div>
-        </summary>
-        <div class="task-details-content">${getTaskDetails(task)}</div>`;
+            <div class="task-status">${getStatusPill(task.status)}${getProgressBar(task)}</div>`;
+
+    const detailsContent = document.createElement('div');
+    detailsContent.className = 'task-details-content';
+    // The getTaskDetails now returns a DOM element to be appended
+    detailsContent.appendChild(getTaskDetails(task));
+
+    details.appendChild(summary);
+    details.appendChild(detailsContent);
     return details;
 };
 
@@ -214,8 +240,11 @@ const renderTasks = () => {
     const archived = taskHistory.filter(t => t.archived);
     const tasks = taskHistory.filter(t => !t.archived && !queue.includes(t) && !scheduled.includes(t));
 
-    if (taskHistory.length === 0) { noTasksMessage.classList.remove('d-none'); } 
-    else { noTasksMessage.classList.add('d-none'); }
+    if (taskHistory.length === 0) {
+        noTasksMessage.classList.remove('d-none');
+    } else {
+        noTasksMessage.classList.add('d-none');
+    }
 
     queue.sort((a, b) => {
         if (a.status === 'running' && b.status !== 'running') return -1;
@@ -248,17 +277,19 @@ const switchToTab = (targetId) => {
             link.classList.add('active');
         }
     });
-    document.querySelectorAll('.task-list').forEach(list => {
+    document.querySelectorAll('.task-list, .empty-state').forEach(list => {
         list.style.display = 'none';
     });
     document.getElementById(targetId).style.display = 'flex';
 };
 
 // --- EVENT LISTENERS ---
-
 runButton.addEventListener('click', async () => {
     const goal = goalInput.value.trim();
-    if (!goal) return alert('Please enter a goal for the agent.');
+    if (!goal) {
+        showToast('Please enter a goal for the agent.', 'error');
+        return;
+    }
 
     runButton.disabled = true;
     runButton.textContent = 'Planning...';
@@ -277,16 +308,18 @@ runButton.addEventListener('click', async () => {
                 archived: false, 
                 log: `Plan for "${result.plan.taskSummary}" received. ${result.plan.isRecurring ? 'Please confirm to schedule.' : 'Please confirm to run.'}\n`,
                 progress: null,
-                result: null, // +++ Initialize result property
+                result: null,
                 runCount: 0
             };
             taskHistory.push(newTask);
             goalInput.value = '';
             renderTasks();
             switchToTab('tasks-list');
-        } else { alert(`Failed to create plan: ${result.error}`); }
+        } else { 
+            showToast(`Failed to create plan: ${result.error}`, 'error');
+        }
     } catch (error) {
-        alert(`Network error: ${error.message}`);
+        showToast(`Network error: ${error.message}`, 'error');
     } finally {
         runButton.disabled = false;
         runButton.textContent = 'Create & Run Agent';
@@ -354,10 +387,8 @@ taskListsWrapper.addEventListener('click', async (e) => {
             break;
         case 'archive':
             task.archived = !task.archived;
-            taskItem.style.transition = 'opacity 0.3s, transform 0.3s';
-            taskItem.style.opacity = '0';
-            taskItem.style.transform = 'scale(0.95)';
-            setTimeout(renderTasks, 300);
+            taskItem.classList.add('archiving'); // Add class for animation
+            setTimeout(renderTasks, 300); // Wait for animation to finish
             break;
     }
 });
@@ -369,8 +400,7 @@ tabLinks.forEach(tab => {
     });
 });
 
-// --- MODAL LOGIC ---
-
+// --- MODAL LOGIC (Animations are handled by CSS) ---
 let qrCodeFetched = false;
 const fetchQrCode = async () => {
     if (qrCodeFetched) return;
@@ -383,12 +413,9 @@ const fetchQrCode = async () => {
             qrCodeImage.src = data.qrCode;
             connectUrl.textContent = data.url;
             qrCodeFetched = true;
-        } else {
-            connectUrl.textContent = 'Error loading QR Code.';
-        }
-    } catch (error) {
-        connectUrl.textContent = 'Error loading QR Code.';
-    } finally {
+        } else { connectUrl.textContent = 'Error loading QR Code.'; }
+    } catch (error) { connectUrl.textContent = 'Error loading QR Code.'; } 
+    finally {
         qrSpinner.classList.add('d-none');
         qrCodeImage.classList.remove('d-none');
     }
@@ -398,16 +425,8 @@ connectButton.addEventListener('click', () => {
     qrModal.classList.remove('d-none');
     fetchQrCode();
 });
-
-closeModalButton.addEventListener('click', () => {
-    qrModal.classList.add('d-none');
-});
-
-qrModal.addEventListener('click', (e) => {
-    if (e.target === qrModal) {
-        qrModal.classList.add('d-none');
-    }
-});
+closeModalButton.addEventListener('click', () => { qrModal.classList.add('d-none'); });
+qrModal.addEventListener('click', (e) => { if (e.target === qrModal) qrModal.classList.add('d-none'); });
 
 window.electronAPI.onShowCredentialsModal((data) => {
     activeCredentialRequest = data;
@@ -419,16 +438,9 @@ window.electronAPI.onShowCredentialsModal((data) => {
 credentialsForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     if (!activeCredentialRequest) return;
-
-    const credentials = {
-        domain: activeCredentialRequest.domain,
-        username: usernameInput.value,
-        password: passwordInput.value,
-    };
-    
+    const credentials = { domain: activeCredentialRequest.domain, username: usernameInput.value, password: passwordInput.value };
     await window.electronAPI.saveCredentials(credentials);
     window.electronAPI.credentialsSubmitted({success: true});
-    
     credentialsModal.classList.add('d-none');
     credentialsForm.reset();
     activeCredentialRequest = null;
@@ -454,23 +466,16 @@ document.addEventListener('DOMContentLoaded', () => {
                     task.log = (task.log || '') + `\n--- Task stopped due to application restart. ---\n`;
                     task.progress = null;
                 }
-                
-                if (task.status === 'pending') {
-                    return null;
-                }
-
-                if (task.status === 'scheduled') {
-                    task.log = (task.log || '') + `\n--- Application restarted. Schedule remains active. ---\n`;
-                }
-
+                if (task.status === 'pending') return null;
+                if (task.status === 'scheduled') task.log = (task.log || '') + `\n--- Application restarted. Schedule remains active. ---\n`;
                 return task;
             }).filter(Boolean);
-
         } catch (e) { 
             console.error("Failed to parse task history:", e); 
             taskHistory = []; 
         }
     }
     document.getElementById('tasks-list').style.display = 'flex';
+    if(taskHistory.length === 0) noTasksMessage.classList.remove('d-none');
     renderTasks();
 });
