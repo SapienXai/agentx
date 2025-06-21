@@ -4,12 +4,12 @@ const { contextBridge, ipcRenderer } = require('electron');
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object.
 contextBridge.exposeInMainWorld('electronAPI', {
-  // Renderer to Main (and wait for a response)
+  // --- Credentials ---
   saveCredentials: (data) => ipcRenderer.invoke('save-credentials', data),
-
-  // Main to Renderer
   onShowCredentialsModal: (callback) => ipcRenderer.on('show-credentials-modal', (_event, value) => callback(value)),
-  
-  // Renderer to Main (fire-and-forget, after user submits)
-  credentialsSubmitted: (data) => ipcRenderer.send('credentials-submitted', data)
+  credentialsSubmitted: (data) => ipcRenderer.send('credentials-submitted', data),
+
+  // --- Human Intervention ---
+  onShowHumanInputModal: (callback) => ipcRenderer.on('show-human-input-modal', (_event, value) => callback(value)),
+  humanInputProvided: (data) => ipcRenderer.send('human-input-provided', data)
 });

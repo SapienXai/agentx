@@ -73,7 +73,7 @@
         </div>
     </div>
 
-    <!-- Credentials Modal (New) -->
+    <!-- Credentials Modal -->
     <div id="credentials-modal" class="modal-overlay d-none">
         <div class="modal-content">
             <button id="close-credentials-modal-button" class="close-btn">×</button>
@@ -84,6 +84,19 @@
                 <input type="password" id="password-input" placeholder="Password" required>
                 <button type="submit" class="primary">Save & Continue</button>
             </form>
+        </div>
+    </div>
+
+    <!-- Human Intervention Modal (New) -->
+    <div id="human-input-modal" class="modal-overlay d-none">
+        <div class="modal-content">
+            <button id="close-human-input-modal-button" class="close-btn">×</button>
+            <h3>Human Intervention Required</h3>
+            <p class="text-muted">The agent is paused because it needs your help. Please complete the action in the browser.</p>
+            <div class="intervention-reason">
+                <strong>Reason:</strong> <span id="human-input-reason">Loading...</span>
+            </div>
+            <button id="human-input-done-button" class="primary">I'm Done, Continue Agent</button>
         </div>
     </div>
 

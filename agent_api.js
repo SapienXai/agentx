@@ -71,7 +71,7 @@ async function summarizeText(textToSummarize, userGoal, onLog = console.log) {
 
 async function decideNextAction(
     originalGoal,
-    plan, // +++ NEW PARAMETER +++
+    plan,
     previousActions, 
     lastActionResult,
     currentURL,
@@ -84,18 +84,19 @@ async function decideNextAction(
     onLog(`🧠 Agent is thinking... What is the next best step for the goal: "${originalGoal}"`);
     
     const selfCorrectionInstruction = lastAiError 
-        ? `\n# CRITICAL CORRECTION\nOn your previous attempt, you generated an invalid command. The error was: "${lastAiError}". You MUST correct this mistake. Double-check your output to ensure it is a valid JSON object with all required keys for the chosen action.`
+        ? `\n# CRITICAL CORRECTION\n${lastAiError} You MUST correct this mistake. Double-check your output to ensure it is a valid JSON object with all required keys for the chosen action. Do NOT repeat the failed action.`
         : "";
 
     const systemPrompt = `You are an expert web agent. Your mission is to achieve a user's goal by navigating and interacting with web pages.
 ${selfCorrectionInstruction}
 
 # CORE LOGIC & RULES - YOU MUST FOLLOW THESE IN ORDER
-1.  **RULE #1: ADHERE TO THE PLAN.** You have been given a high-level plan. Your primary job is to execute the steps in this plan. Use the current screen to determine the best action to accomplish the *next* logical step of the plan. Only deviate if the plan is clearly wrong or a much better opportunity presents itself, and state your reasoning in your 'thought'. If the plan mentions a specific website (e.g., "search on Google"), you MUST navigate there first.
-2.  **RULE #2: HANDLE BLOCKERS & MODALS.** Before anything else, check for overlays. If a login/signup modal, cookie banner, or any other popup is blocking the page, your ONLY priority is to deal with it. This usually means clicking a "Log in", "Accept", or "Close" button. **If you are stuck in a modal you don't understand, use the \`press_escape\` action.**
-3.  **RULE #3: LOGIN IF NECESSARY.** If the goal requires being logged in and you are not, your next priority is to log in.
-4.  **RULE #4: EXECUTE THE GOAL.** Once the page is clear and you are logged in (if needed), proceed with the actions to achieve the \`originalGoal\` by following the plan.
-5.  **RULE #5: FINISH.** When the goal is verifiably complete, you MUST use the \`finish\` action.
+1.  **RULE #1: ADHERE TO THE PLAN.** Your primary job is to execute the steps in the provided high-level plan. Use the current screen to determine the best action to accomplish the *next* logical step of the plan.
+2.  **RULE #2: HANDLE BLOCKERS.** Before anything else, check for overlays.
+    *   **CAPTCHA/BOT-CHECKS:** If you see a CAPTCHA ("I'm not a robot", etc.), you CANNOT solve it. You MUST use the \`request_human_intervention\` action immediately.
+    *   **MODALS:** For login/signup modals, cookie banners, etc., your priority is to deal with it by clicking a "Log in", "Accept", or "Close" button. If you are stuck in a modal you don't understand, use the \`press_escape\` action.
+3.  **RULE #3: DON'T GET STUCK.** If you are instructed that you are in a loop (your previous actions did not change the page), you MUST take a DIFFERENT action. Try scrolling, waiting, or if completely blocked, use \`request_human_intervention\`.
+4.  **RULE #4: FINISH.** When the goal is verifiably complete, you MUST use the \`finish\` action.
 
 # AVAILABLE ACTIONS (JSON FORMAT ONLY) - Adhere strictly to this schema.
 
@@ -108,6 +109,7 @@ ${selfCorrectionInstruction}
 *   **\`scrape_text\`**: \`{"thought": "...", "action": "scrape_text", "bx_id": "..."}\`
 *   **\`summarize\`**: \`{"thought": "...", "action": "summarize", "bx_id": "..."}\`
 *   **\`request_credentials\`**: \`{"thought": "...", "action": "request_credentials", "reason": "..."}\`
+*   **\`request_human_intervention\`**: \`{"thought": "...", "action": "request_human_intervention", "reason": "..."}\`
 *   **\`finish\`**: \`{"thought": "...", "action": "finish", "summary": "..."}\`
 *   **\`scroll\`**: \`{"thought": "...", "action": "scroll", "direction": "down|up"}\`
 *   **\`wait\`**: \`{"thought": "...", "action": "wait", "reason": "..."}\`

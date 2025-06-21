@@ -14,8 +14,6 @@ const CREDENTIALS_PATH = path.join(__dirname, 'credential_store.json');
 const USER_DATA_DIR = path.join(__dirname, 'playwright_session_data');
 
 async function getInteractiveElements(page) {
-    // This function can fail if the page navigates during evaluation.
-    // We add a try-catch block to handle this gracefully.
     try {
         await page.evaluate(() => {
             document.querySelectorAll('[data-bx-id]').forEach(el => el.removeAttribute('data-bx-id'));
@@ -59,7 +57,6 @@ async function getInteractiveElements(page) {
     } catch (error) {
         if (error.message.includes('Execution context was destroyed')) {
             console.log('...Retrying element analysis after navigation...');
-            // Give the page a moment to settle, then retry once.
             await sleep(1000); 
             return getInteractiveElements(page);
         }
@@ -102,13 +99,9 @@ function getCredentialsForUrl(url) {
 
 function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
 
-// +++ NEW: Robust page stabilization function +++
 async function stabilizePage(page, onLog) {
     onLog("...Waiting for page to stabilize after action...");
     try {
-        // Wait for multiple conditions to be met.
-        // 'domcontentloaded' is a good first check for basic page availability.
-        // 'networkidle' is great for waiting for all background requests to finish.
         await Promise.all([
             page.waitForLoadState('domcontentloaded', { timeout: 10000 }),
             page.waitForLoadState('networkidle', { timeout: 15000 }),
@@ -119,8 +112,7 @@ async function stabilizePage(page, onLog) {
     }
 }
 
-
-async function runAutonomousAgent(userGoal, plan, onLog, agentControl, screenSize, promptForCredentials) {
+async function runAutonomousAgent(userGoal, plan, onLog, agentControl, screenSize, promptForCredentials, promptForHumanInput) {
   onLog(`🚀 Launching browser for goal: "${userGoal}"`);
   const context = await chromium.launchPersistentContext(USER_DATA_DIR, {
       headless: false,
@@ -145,7 +137,7 @@ async function runAutonomousAgent(userGoal, plan, onLog, agentControl, screenSiz
     for (let i = 0; i < MAX_AGENT_STEPS; i++) {
         if (agentControl && agentControl.stop) throw new Error('Agent stopped by user.');
       
-        await stabilizePage(page, onLog); // +++ Stabilize at the BEGINNING of the loop +++
+        await stabilizePage(page, onLog);
 
         onLog(`\n--- Step ${i + 1} / ${MAX_AGENT_STEPS} ---`);
       
@@ -170,6 +162,14 @@ async function runAutonomousAgent(userGoal, plan, onLog, agentControl, screenSiz
         let commandIsValid = false;
         let aiRetries = 0;
         let lastAiError = "";
+        
+        // +++ LOOP DETECTION LOGIC +++
+        if (actionHistory.length >= 3 && 
+            actionHistory.slice(-3).every(a => a.action === actionHistory.slice(-1)[0].action && a.bx_id === actionHistory.slice(-1)[0].bx_id)) {
+            lastAiError = "You have been detected in a repetitive loop. Your previous actions did not change the state of the page.";
+            onLog(`🚨 Loop detected! Forcing agent to reconsider its action.`);
+        }
+
 
         while (aiRetries < MAX_AI_RETRIES && !commandIsValid) {
             if (aiRetries > 0) {
@@ -185,12 +185,9 @@ async function runAutonomousAgent(userGoal, plan, onLog, agentControl, screenSiz
             
             switch(command.action) {
                 case 'type':
-                    if (command.bx_id && command.text !== undefined) commandIsValid = true;
-                    else lastAiError = "Invalid `type` action. It must include both `bx_id` and `text` keys.";
-                    break;
                 case 'compose_text':
-                    if (command.bx_id && command.description) commandIsValid = true;
-                    else lastAiError = "Invalid `compose_text` action. It must include both `bx_id` and `description` keys.";
+                    if (command.bx_id && (command.text !== undefined || command.description !== undefined)) commandIsValid = true;
+                    else lastAiError = `Invalid \`${command.action}\` action. Missing keys.`;
                     break;
                 case 'click':
                 case 'scrape_text':
@@ -206,11 +203,18 @@ async function runAutonomousAgent(userGoal, plan, onLog, agentControl, screenSiz
                     if (command.direction) commandIsValid = true;
                     else lastAiError = "Invalid `scroll` action. It must include a `direction` key.";
                     break;
+                 case 'request_human_intervention':
+                    if (command.reason) commandIsValid = true;
+                    else lastAiError = "Invalid `request_human_intervention` action. It must include a `reason` key.";
+                    break;
                 default:
                     commandIsValid = true;
                     break;
             }
-            if (!commandIsValid) aiRetries++;
+            if (!commandIsValid) {
+                 if (lastAiError === "") lastAiError = "The generated command was invalid.";
+                 aiRetries++;
+            }
         }
 
         if (!commandIsValid) {
@@ -222,6 +226,9 @@ async function runAutonomousAgent(userGoal, plan, onLog, agentControl, screenSiz
         if (command.thought) onLog(`🧠 Agent Thought: ${command.thought}`);
         actionHistory.push(command);
         if (actionHistory.length > MAX_ACTION_HISTORY) actionHistory.shift();
+
+        // After a valid command, reset the loop detection error
+        lastAiError = "";
 
         switch (command.action) {
             case 'navigate':
@@ -280,6 +287,18 @@ async function runAutonomousAgent(userGoal, plan, onLog, agentControl, screenSiz
                      onLog('✅ Credentials received. Resuming agent...');
                  } catch (e) {
                      throw new Error('User canceled credential entry.');
+                 }
+                 break;
+            // +++ NEW ACTION IMPLEMENTATION +++
+            case 'request_human_intervention':
+                 onLog(`⏸️ Action: Agent requires human help. Reason: ${command.reason}`);
+                 onLog('🟡 Please complete the required action in the browser window.');
+                 try {
+                     await promptForHumanInput(command.reason);
+                     onLog('✅ Human intervention complete. Resuming agent...');
+                     lastActionResult = "Human successfully completed a manual step.";
+                 } catch (e) {
+                      throw new Error('User canceled the operation during human intervention.');
                  }
                  break;
             case 'wait':
