@@ -14,6 +14,9 @@
     --text-bright: #FFFFFF;
     --border-color: #333;
 
+    --danger-color: #b13b3b;
+    --danger-hover-color: #c84a4a;
+
     --status-running-bg: rgba(76, 175, 80, 0.2);
     --status-running-text: #A5D6A7;
     --status-running-border: rgba(76, 175, 80, 0.6);
@@ -87,97 +90,27 @@ body {
 
 /* --- Tasks Section --- */
 .tasks-container { display: flex; flex-direction: column; gap: 20px; }
-.tabs { display: flex; gap: 25px; border-bottom: 1px solid var(--border-color); padding: 0 5px; }
+.tabs { display: flex; flex-wrap: wrap; gap: 25px; border-bottom: 1px solid var(--border-color); padding: 0 5px; }
 .tabs a { text-decoration: none; color: var(--text-secondary); font-size: 16px; font-weight: 500; padding-bottom: 12px; position: relative; cursor: pointer; }
 .tabs a.active { color: var(--text-bright); }
 .tabs a.active::after { content: ''; position: absolute; bottom: -1px; left: 0; right: 0; height: 2px; background-color: var(--text-bright); }
-.task-list { display: flex; flex-direction: column; gap: 15px; }
+.task-list, .settings-panel { display: flex; flex-direction: column; gap: 15px; }
 
-/* --- NEW: Empty State Styling --- */
-.empty-state-wrapper {
-    text-align: center;
-    padding: 60px 20px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 15px;
-    opacity: 0.7;
-    width: 100%;
-}
-.empty-state-icon {
-    width: 60px;
-    height: 60px;
-    color: var(--text-secondary);
-}
-.empty-state-wrapper h3 {
-    font-size: 18px;
-    font-weight: 500;
-    color: var(--text-primary);
-}
-.empty-state-wrapper .text-muted {
-    max-width: 400px;
-    line-height: 1.5;
-}
-.empty-state-wrapper.d-none {
-    display: none;
-}
+/* --- Empty State Styling --- */
+.empty-state-wrapper { text-align: center; padding: 60px 20px; display: flex; flex-direction: column; align-items: center; gap: 15px; opacity: 0.7; width: 100%; }
+.empty-state-icon { width: 60px; height: 60px; color: var(--text-secondary); }
+.empty-state-wrapper h3 { font-size: 18px; font-weight: 500; color: var(--text-primary); }
+.empty-state-wrapper .text-muted { max-width: 400px; line-height: 1.5; }
+.empty-state-wrapper.d-none { display: none; }
 
-/* NEW: Example Task Styles */
-.example-tasks {
-    display: flex;
-    flex-direction: column;
-    gap: 15px;
-    margin-top: 30px;
-    width: 100%;
-}
-.example-task-card {
-    background-color: var(--surface-darker);
-    border: 1px solid var(--border-color);
-    border-radius: 12px;
-    padding: 15px;
-    text-align: left;
-    display: grid;
-    grid-template-areas: "title button" "desc button";
-    grid-template-columns: 1fr auto;
-    gap: 5px 15px;
-    align-items: center;
-    cursor: pointer;
-    transition: background-color 0.2s, transform 0.2s;
-}
-.example-task-card:hover {
-    background-color: var(--surface-active);
-    transform: translateY(-2px);
-}
-.example-task-card h4 {
-    grid-area: title;
-    font-size: 15px;
-    font-weight: 600;
-    margin: 0;
-    color: var(--text-bright);
-}
-.example-task-card p {
-    grid-area: desc;
-    font-size: 14px;
-    color: var(--text-secondary);
-    line-height: 1.4;
-    margin: 0;
-}
-.example-run-btn {
-    grid-area: button;
-    background-color: var(--primary-action);
-    color: var(--text-bright);
-    border: none;
-    border-radius: 8px;
-    padding: 8px 15px;
-    font-size: 14px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: background-color 0.2s;
-}
-.example-run-btn:hover {
-    background-color: var(--primary-action-hover);
-}
-
+/* Example Task Styles */
+.example-tasks { display: flex; flex-direction: column; gap: 15px; margin-top: 30px; width: 100%; }
+.example-task-card { background-color: var(--surface-darker); border: 1px solid var(--border-color); border-radius: 12px; padding: 15px; text-align: left; display: grid; grid-template-areas: "title button" "desc button"; grid-template-columns: 1fr auto; gap: 5px 15px; align-items: center; cursor: pointer; transition: background-color 0.2s, transform 0.2s; }
+.example-task-card:hover { background-color: var(--surface-active); transform: translateY(-2px); }
+.example-task-card h4 { grid-area: title; font-size: 15px; font-weight: 600; margin: 0; color: var(--text-bright); }
+.example-task-card p { grid-area: desc; font-size: 14px; color: var(--text-secondary); line-height: 1.4; margin: 0; }
+.example-run-btn { grid-area: button; background-color: var(--primary-action); color: var(--text-bright); border: none; border-radius: 8px; padding: 8px 15px; font-size: 14px; font-weight: 600; cursor: pointer; transition: background-color 0.2s; }
+.example-run-btn:hover { background-color: var(--primary-action-hover); }
 
 /* --- Task Item Styling --- */
 .task-item { background-color: var(--surface-color); border-radius: 12px; overflow: hidden; transition: background-color 0.2s ease, opacity 0.3s, transform 0.3s; animation: pop-in 0.4s cubic-bezier(0.34, 1.56, 0.64, 1); }
@@ -230,6 +163,17 @@ pre.status-log { background-color: var(--bg-color); padding: 12px; border-radius
 .running-indicator { width: 8px; height: 8px; background-color: var(--status-running-text); border-radius: 50%; animation: pulse 1.5s infinite ease-in-out; }
 @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(165, 214, 167, 0.7); } 70% { box-shadow: 0 0 0 8px rgba(165, 214, 167, 0); } 100% { box-shadow: 0 0 0 0 rgba(165, 214, 167, 0); } }
 
+/* --- NEW: Settings & Reset Button Styles --- */
+.settings-panel { padding: 10px; }
+.settings-panel h3 { font-size: 20px; margin-bottom: 20px; padding-bottom: 10px; border-bottom: 1px solid var(--border-color); }
+.setting-item { display: flex; justify-content: space-between; align-items: center; background: var(--surface-color); padding: 15px; border-radius: 12px; }
+.setting-info h4 { font-size: 16px; font-weight: 500; margin-bottom: 5px; }
+.setting-info p { font-size: 14px; line-height: 1.5; color: var(--text-secondary); max-width: 300px; }
+.button-danger { background-color: var(--danger-color); color: var(--text-bright); border: none; border-radius: 8px; padding: 10px 15px; font-size: 14px; font-weight: 600; cursor: pointer; transition: background-color 0.2s; display: flex; align-items: center; gap: 8px; }
+.button-danger:hover { background-color: var(--danger-hover-color); }
+.list-actions-header { display: flex; justify-content: flex-end; padding-bottom: 15px; border-bottom: 1px solid var(--border-color); margin-bottom: -5px; }
+.list-actions-header.d-none { display: none !important; }
+
 /* --- Connect Button & Modal --- */
 .connect-btn { position: absolute; top: 0; right: 0; background: none; border: none; color: var(--text-secondary); font-size: 24px; cursor: pointer; padding: 10px; transition: color 0.2s; }
 .connect-btn:hover { color: var(--text-bright); }
@@ -247,7 +191,7 @@ code#connect-url { background-color: var(--bg-color); padding: 5px 10px; border-
 .credentials-form button { color: var(--text-bright); background-color: var(--primary-action); border: none; border-radius: 20px; padding: 12px 15px; font-size: 15px; font-weight: 600; cursor: pointer; transition: background-color 0.2s; }
 .credentials-form button:hover { background-color: var(--primary-action-hover); }
 
-/* --- NEW: Toast Notification Styles --- */
+/* --- Toast Notification Styles --- */
 #toast-container { position: fixed; bottom: 20px; right: 20px; z-index: 2000; display: flex; flex-direction: column; gap: 10px; }
 .toast { background-color: var(--surface-color); color: var(--text-primary); padding: 15px 20px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); border-left: 4px solid var(--text-secondary); opacity: 0; transform: translateX(100%); transition: opacity 0.3s ease, transform 0.3s ease; }
 .toast.show { opacity: 1; transform: translateX(0); }

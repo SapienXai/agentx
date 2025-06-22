@@ -43,10 +43,11 @@
                 <a href="#queue" class="tab-link" data-target="queue-list">Queue <span id="queue-count" class="task-count-badge"></span></a>
                 <a href="#scheduled" class="tab-link" data-target="scheduled-tasks">Scheduled <span id="scheduled-count" class="task-count-badge"></span></a>
                 <a href="#archived" class="tab-link" data-target="archived-tasks">Archive</a>
+                <a href="#settings" class="tab-link" data-target="settings-panel">Settings</a>
             </nav>
 
             <div id="task-lists-wrapper">
-                <!-- Tasks List with its Empty State -->
+                <!-- Tasks List -->
                 <div id="tasks-list" class="task-list">
                     <div class="empty-state-wrapper">
                         <svg class="empty-state-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zM8.5 12c.83 0 1.5-.67 1.5-1.5S9.33 9 8.5 9 7 9.67 7 10.5 7.67 12 8.5 12zm7 0c.83 0 1.5-.67 1.5-1.5S16.33 9 15.5 9s-1.5.67-1.5 1.5.67 1.5 1.5 1.5zm-4.03 3.44c1.33.67 2.73.67 4.06 0 .23-.11.38-.34.35-.59-.03-.25-.23-.45-.48-.51-1.12-.28-2.3-.28-3.42 0-.25.06-.45.26-.48.51-.03.25.11.48.35.59z"/></svg>
@@ -66,7 +67,7 @@
                         </div>
                     </div>
                 </div>
-                <!-- Queue List with its Empty State -->
+                <!-- Queue List -->
                 <div id="queue-list" class="task-list" style="display: none;">
                     <div class="empty-state-wrapper">
                         <svg class="empty-state-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z"/></svg>
@@ -74,7 +75,7 @@
                         <p class="text-muted">When you run a task, it will appear here while waiting to execute. Tasks run one at a time to ensure focus.</p>
                     </div>
                 </div>
-                <!-- Scheduled List with its Empty State -->
+                <!-- Scheduled List -->
                 <div id="scheduled-tasks" class="task-list" style="display: none;">
                     <div class="empty-state-wrapper">
                         <svg class="empty-state-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M19 3h-1V1h-2v2H8V1H6v2H5c-1.11 0-1.99.9-1.99 2L3 19c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11zM7 10h5v5H7v-5z"/></svg>
@@ -99,14 +100,33 @@
                         </div>
                     </div>
                 </div>
-                <!-- Archived List with its Empty State -->
+                <!-- Archived List -->
                 <div id="archived-tasks" class="task-list" style="display: none;">
+                    <div id="archive-actions" class="list-actions-header d-none">
+                        <button id="clear-archive-btn" class="button-danger">
+                            <i class="bi bi-trash3"></i> Clear Archived Tasks
+                        </button>
+                    </div>
                     <div class="empty-state-wrapper">
                         <svg class="empty-state-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M20.54 5.23l-1.39-1.68C18.88 3.21 18.47 3 18 3H6c-.47 0-.88.21-1.16.55L3.46 5.23C3.17 5.57 3 6.02 3 6.5V19c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V6.5c0-.48-.17-.93-.46-1.27zM6.24 5h11.52l.83 1H5.42l.82-1zM5 19V8h14v11H5z"/></svg>
                         <h3>Archive is Empty</h3>
                         <p class="text-muted">Completed, stopped, or failed tasks can be archived here to keep your main list clean.</p>
                     </div>
                 </div>
+                <!-- Settings Panel -->
+                <div id="settings-panel" class="settings-panel" style="display: none;">
+                    <h3>Application Settings</h3>
+                    <div class="setting-item">
+                        <div class="setting-info">
+                            <h4>Reset Application</h4>
+                            <p class="text-muted">This will permanently delete all tasks, including active, queued, and archived tasks. This action cannot be undone.</p>
+                        </div>
+                        <button id="reset-all-btn" class="button-danger">
+                            <i class="bi bi-exclamation-triangle"></i> Reset All Tasks
+                        </button>
+                    </div>
+                </div>
+
             </div>
         </main>
     </div>

@@ -11,9 +11,13 @@ const tasksList = document.getElementById('tasks-list');
 const queueList = document.getElementById('queue-list');
 const scheduledTasksList = document.getElementById('scheduled-tasks');
 const archivedTasksList = document.getElementById('archived-tasks');
+const settingsPanel = document.getElementById('settings-panel');
 const tabLinks = document.querySelectorAll('.tab-link');
 const taskListsWrapper = document.getElementById('task-lists-wrapper');
 const toastContainer = document.getElementById('toast-container');
+const archiveActionsHeader = document.getElementById('archive-actions');
+const clearArchiveBtn = document.getElementById('clear-archive-btn');
+const resetAllBtn = document.getElementById('reset-all-btn');
 
 // QR Modal Selectors
 const qrModal = document.getElementById('qr-modal');
@@ -261,11 +265,18 @@ const renderTasks = () => {
         return a.id - b.id;
     });
 
-    renderList(tasksList, [...tasks, ...pending]); // Show pending tasks in the main list
+    renderList(tasksList, [...tasks, ...pending]);
     renderList(queueList, queue);
     renderList(scheduledTasksList, scheduled);
     renderList(archivedTasksList, archived);
     
+    // Show/hide clear archive button
+    if (archived.length > 0) {
+        archiveActionsHeader.classList.remove('d-none');
+    } else {
+        archiveActionsHeader.classList.add('d-none');
+    }
+
     const updateCountBadge = (badgeId, count) => {
         const badge = document.getElementById(badgeId);
         if (count > 0) {
@@ -286,7 +297,7 @@ const switchToTab = (targetId) => {
             link.classList.add('active');
         }
     });
-    document.querySelectorAll('.task-list').forEach(list => {
+    document.querySelectorAll('.task-list, .settings-panel').forEach(list => {
         list.style.display = 'none';
     });
     document.getElementById(targetId).style.display = 'flex';
@@ -426,6 +437,28 @@ tabLinks.forEach(tab => {
     });
 });
 
+clearArchiveBtn.addEventListener('click', () => {
+    if (confirm('Are you sure you want to permanently delete all archived tasks?')) {
+        taskHistory = taskHistory.filter(t => !t.archived);
+        renderTasks();
+        showToast('Archived tasks cleared.', 'success');
+    }
+});
+
+resetAllBtn.addEventListener('click', () => {
+    if (confirm('DANGER: Are you sure you want to delete ALL tasks and reset the application? This cannot be undone.')) {
+        // Stop any running agent first
+        const runningTask = taskHistory.find(t => t.status === 'running');
+        if (runningTask) {
+             fetch('/api/stop-agent', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ taskId: runningTask.id }) });
+        }
+        
+        taskHistory = [];
+        renderTasks();
+        showToast('Application has been reset.', 'success');
+    }
+});
+
 // --- MODAL LOGIC ---
 let qrCodeFetched = false;
 const fetchQrCode = async () => {
@@ -493,7 +526,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     task.progress = null;
                 }
                 if (task.status === 'pending') return null;
-                // For this version, we are not persisting schedules across restarts.
                 if (task.status === 'scheduled') {
                     task.status = 'stopped';
                      task.log = (task.log || '') + `\n--- Schedule canceled due to application restart. Please reschedule. ---\n`;
