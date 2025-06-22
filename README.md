@@ -97,9 +97,9 @@ npm start
 The Electron application window will open, and you can start giving the agent tasks.
 
 <p align="center">
-  <img src="https://user-images.githubusercontent.com/1316593/284059152-16a7e788-b271-4171-8840-785a2e5d7a6e.png" alt="BrowserX Interface Screenshot" width="800"/>
+  <img src="./screenshot.png" alt="BrowserX Interface Screenshot" width="800"/>
   <br>
-  <em>The BrowserX interface, showing task management, scheduling, and remote control access.</em>
+  <em>The AgentX interface, showing task management, scheduling, and remote control access.</em>
 </p>
 
 ---
