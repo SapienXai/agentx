@@ -108,9 +108,6 @@ The Electron application window will open, and you can start giving the agent ta
 
 The agent operates on a sophisticated loop that combines high-level planning with intelligent, tool-based execution. This "tool-first" approach makes it faster and more reliable than agents that rely solely on visual analysis.
 
-<p align="center">
-  <img src="https://user-images.githubusercontent.com/1316593/284082159-4f738ba3-b91c-43f6-9dc4-1da21aa08170.png" alt="Agent Architecture Diagram" width="850"/>
-</p>
 
 ### Goal Input & Planning:
 
