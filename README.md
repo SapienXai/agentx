@@ -1,142 +1,170 @@
-# BrowserX AI Agent
+# AgentX by SapienX
 
 <p align="center">
-  <img src="./logo.png" alt="BrowserX AI Agent Logo" width="150"/>
+  <img src="./agentx.gif" alt="BrowserX AI Agent Logo" width="180"/>
 </p>
 
 <p align="center">
-  <strong>An autonomous AI agent that understands natural language, creates a plan, and executes tasks in a web browser.</strong>
+  <strong>An autonomous AI agent that understands natural language, creates a plan, and executes complex tasks in a web browser using specialized tools.</strong>
 </p>
 
 <p align="center">
-  <a href="#key-features">Key Features</a> •
-  <a href="#how-it-works">How It Works</a> •
-  <a href="#tech-stack">Tech Stack</a> •
   <a href="#getting-started">Getting Started</a> •
+  <a href="#how-it-works">How It Works</a> •
+  <a href="#key-features">Key Features</a> •
   <a href="#usage-guide">Usage Guide</a> •
-  <a href="#running-tests">Running Tests</a>
+  <a href="#tech-stack">Tech Stack</a>
 </p>
 
 ---
 
+## 🚀 Getting Started
 
-*The BrowserX interface, showing the Home, Agent, History, and Connect screens accessible from both desktop and a mobile device.*
+Get the BrowserX Agent running on your machine in a few simple steps.
 
-## Overview
+### 1. Prerequisites
 
-BrowserX is a sophisticated AI agent built with Electron and Playwright that can operate a web browser to achieve high-level goals specified by a user. You can simply state a task like "post 'Hello World' to my new blog on hashnode.com," and BrowserX will use GPT-4o to create a step-by-step plan, which it then executes autonomously.
+- [Node.js](https://nodejs.org/en/download/) (v18 or later is recommended).
 
-The entire process is managed through a clean, modern user interface that runs on your desktop but can also be **controlled from your phone** or any other device on your local network.
+### 2. Clone the Repository
 
-## Key Features
+Open your terminal, navigate to where you want to store the project, and run:
 
--   🧠 **Natural Language Understanding**: Leverages OpenAI's GPT-4o to interpret your goals and create a robust, multi-step execution plan.
--   🤖 **Autonomous Browser Execution**: Uses Playwright to run a real Chrome browser, navigating pages, typing text, and clicking elements to complete its tasks.
--   📱 **Full Remote Control**: An integrated web server allows you to control the agent from your phone or any other device on the same network.
--   💨 **QR Code Connection**: Simply scan a QR code with your phone to instantly connect to the agent's control panel.
--   👀 **Live Status & History**: Watch the agent's every move in a real-time status log and review all past tasks in the history tab.
--   🛑 **User in the Loop**: You approve the plan before it runs, and a prominent "Stop Agent" button lets you halt execution at any time.
--   ⚡️ **Human-like Operation**: Launches the browser with your real screen dimensions and uses a persistent session to avoid bot detection.
+```bash
+git clone https://github.com/SapienXai/agentx.git
+cd agentx
+```
 
-## How It Works
+### 3. Install Dependencies
 
-The agent operates on a sophisticated loop that combines high-level planning with real-time decision-making.
+This single command installs all necessary packages and also triggers Playwright to download the required browser binaries for automation.
 
-1.  **Goal Input**: The user provides a high-level goal in the UI (e.g., "find the top 3 trending AI articles on Hacker News").
-2.  **Plan Generation**: The goal is sent to the backend, which calls the **`createPlan`** function. This function uses **GPT-4o** to generate a JSON object containing a `searchTerm`, a `taskSummary`, and a granular, step-by-step **`plan`**. The `searchTerm` is used to construct a `targetURL` (e.g., a Google search) that the agent will open first.
-3.  **User Approval**: The generated plan, including all steps, is displayed in the UI for user confirmation.
-4.  **Autonomous Execution**: Once approved, the **`runAutonomousAgent`** function is triggered. This starts a Playwright-controlled Chrome browser.
-5.  **The Action Loop**: The agent enters a loop, executing each step from its plan:
-    a. It examines the current page's content and a screenshot.
-    b. It sends this visual and structural data, along with its overall goal and current sub-task, to the **`decideNextBrowserAction`** function. This function uses **GPT-4o** to decide the single next action (e.g., `type`, `click`, `finish_step`).
-    c. The action is executed by Playwright.
-    d. The process repeats for each step until the plan is complete (`"action": "finish"`), is stopped by the user, or hits an error.
-6.  **Live Feedback**: Throughout the process, status updates are broadcast via WebSockets to all connected clients (desktop, phones, etc.).
+```bash
+npm install
+```
 
-## Tech Stack
+### 4. Set Up API Keys
 
--   **Desktop App**: [Electron](https://www.electronjs.org/)
--   **Browser Automation**: [Playwright](https://playwright.dev/)
--   **AI Models**: [OpenAI API](https://openai.com/) (GPT-4o for planning and actions)
--   **Backend Server**: [Node.js](https://nodejs.org/) & [Express.js](https://expressjs.com/)
--   **Real-time Communication**: [WebSockets](https://developer.mozilla.org/en-US/docs/Web/API/WebSockets_API) (`ws` library)
--   **Frontend UI**: HTML, CSS, JavaScript
--   **QR Code Generation**: `qrcode` library
+The agent relies on a few powerful services for its intelligence, search, and scraping capabilities.
 
-## Getting Started
+Create a `.env` file in the root of the project directory. You can do this by copying the example file:
 
-Follow these steps to get the BrowserX Agent running on your local machine.
+```bash
+cp .env.example .env
+```
 
-### Prerequisites
+(If `.env.example` doesn't exist, just create a new file named `.env`)
 
--   [Node.js](https://nodejs.org/en/download/) (v18 or later)
--   [npm](https://www.npmjs.com/get-npm) (usually included with Node.js)
+Edit the `.env` file and add your API keys. It should look like this:
 
-### Installation
+```ini
+# .env
 
-1.  **Clone the repository:**
-    ```bash
-    git clone https://github.com/your-username/browserx-ai-agent.git
-    cd browserx-ai-agent
-    ```
+# Required for planning and decision-making
+OPENAI_API_KEY=sk-...
 
-2.  **Install dependencies:**
-    This command also triggers Playwright to download the necessary browser binaries.
-    ```bash
-    npm install
-    ```
+# Required for advanced web search
+TAVILY_API_KEY=tvly-...
 
-3.  **Set up your environment variables:**
-    Create a file named `.env` in the root of the project directory. This file holds your OpenAI API key.
+# Required for reliable web scraping
+FIRECRAWL_API_KEY=fc-...
+```
 
-    ```ini
-    # .env
-    OPENAI_API_KEY="sk-YourSecretOpenAIApiKeyHere"
+**How to Get Your API Keys:**
 
-    # Optionally override the default port (3000)
-    # PORT=8080
-    ```
+- **🔑 OpenAI**: Required for the agent's core intelligence.
+  - Get your key: [platform.openai.com/api-keys](https://platform.openai.com/api-keys)
+  - Note: You'll need to have some credits on your OpenAI account. New accounts often come with free trial credits.
 
-    *Replace the placeholder with your actual OpenAI API key.* If this variable is missing, the application will log an error and exit on startup.
+- **🔑 Tavily AI**: The agent's specialized search tool. It's much more effective for AI agents than a standard Google search.
+  - Get your key: [app.tavily.com](https://app.tavily.com)
+  - Note: Tavily offers a generous free tier with 1,000 API calls per month.
 
-4.  **Run the application:**
-    ```bash
-    npm start
-    ```
+- **🔑 Firecrawl**: The agent's web scraping tool, for instantly turning websites into clean, usable data.
+  - Get your key: [firecrawl.dev](https://firecrawl.dev)
+  - Note: Firecrawl also has a free tier that is sufficient for most use cases.
 
-## Usage Guide
+**Important**: The application will not start without these API keys.
 
-Once the application is running, you can interact with it using the UI.
+### 5. Run the Application
 
-#### 1. 🏠 Create a Task
+You're all set! Start the agent with:
 
-This is where you start. Enter a high-level goal into the text area and click **"Create & Run Agent"**.
+```bash
+npm start
+```
 
-#### 2. ✅ Review the Plan
+The Electron application window will open, and you can start giving the agent tasks.
 
--   **Plan Review**: After you create a task, it will appear in the "Tasks" list with a "Pending" status. Expand the task to see the AI-generated `Task Summary`, `Initial URL`, and the step-by-step `Plan`. You can either **Confirm & Run** or **Cancel**.
--   **Live View**: Once confirmed, the task status will change to "Queued" and then "Running". You can see the live status log of the agent's actions within the expanded task view.
--   **Stop Agent**: A **"Stop Agent"** button appears while the agent is running. Click this at any time to immediately terminate the current task.
+<p align="center">
+  <img src="https://user-images.githubusercontent.com/1316593/284059152-16a7e788-b271-4171-8840-785a2e5d7a6e.png" alt="BrowserX Interface Screenshot" width="800"/>
+  <br>
+  <em>The BrowserX interface, showing task management, scheduling, and remote control access.</em>
+</p>
 
-#### 3. 🗂️ Manage Tasks
+---
 
--   **Queue**: The "Queue" tab shows all tasks that are currently running or waiting to run.
--   **Scheduled**: The "Scheduled" tab shows tasks that are set to run on a recurring basis.
--   **Archive**: The "Archive" tab holds all your completed, stopped, or failed tasks.
+## 💡 How It Works
 
-#### 4. 📱 Connect a Mobile Device
+The agent operates on a sophisticated loop that combines high-level planning with intelligent, tool-based execution. This "tool-first" approach makes it faster and more reliable than agents that rely solely on visual analysis.
 
--   To control the agent from your phone, click the QR code icon in the header.
--   Open the camera app on your phone and scan the QR code.
--   This will open the web interface in your phone's browser, giving you full control.
--   **Note:** Your phone must be connected to the same Wi-Fi network as your computer.
+<p align="center">
+  <img src="https://user-images.githubusercontent.com/1316593/284082159-4f738ba3-b91c-43f6-9dc4-1da21aa08170.png" alt="Agent Architecture Diagram" width="850"/>
+</p>
 
-Future Improvements
-Enhanced Error Recovery: Improve the agent's ability to recover from unexpected errors or popups.
-Long-term Memory: Implement a vector database (e.g., Pinecone) to give the agent memory of past tasks.
-More Complex Actions: Add data extraction and summarization capabilities.
-Security: Add an optional password protection layer for the web interface.
-Contributing
-Contributions are welcome! If you have an idea for a new feature or have found a bug, please open an issue or submit a pull request.
-License
-This project is released under the MIT License.
+### Goal Input & Planning:
+
+- The user provides a high-level goal (e.g., "Find the top 3 AI news headlines from Google News and summarize them").
+- The `createPlan` function sends this goal to GPT-4o, which returns a structured JSON plan, including a task summary, a target URL, recurring schedule information (if any), and a step-by-step plan.
+- **User Approval**: The generated plan is displayed in the UI for user confirmation.
+
+### Autonomous Execution Loop (`runAutonomousAgent`):
+
+- Once approved, the agent starts its execution loop. The core logic is handled by the `decideNextAction` function.
+- **Tool Selection**: For each step, `decideNextAction` analyzes the goal, plan, and previous action results to choose the best tool for the job.
+  - If the task is to search the web, it uses the `tavily_search` tool.
+  - If the task is to scrape a specific URL, it uses the `firecrawl_scrape` tool.
+  - Only if direct visual interaction is required (e.g., logging in, clicking a button without a clear API), it falls back to using Playwright to control a browser.
+- **Action Execution**: The chosen action (e.g., `tavily_search`, `click`, `type`, `finish`) is executed.
+- **Feedback & Iteration**: The result of the action (e.g., search results, scraped content, or an error message) is fed back into the `decideNextAction` function for the next iteration. This allows the agent to self-correct. For example, if a `firecrawl_scrape` fails on one URL, it will try a different URL from the last search result.
+- **Completion**: The loop continues until the `finish` action is called with a final summary, the agent is stopped by the user, or it reaches the maximum step limit.
+
+---
+
+## ✨ Key Features
+
+- 🧠 **Advanced AI Planning**: Leverages GPT-4o to create structured, actionable plans from natural language inputs.
+- 🔍 **Intelligent Web Search**: Uses Tavily AI for optimized, AI-agent-friendly search results.
+- 📊 **Reliable Web Scraping**: Firecrawl ensures clean, structured data extraction from websites.
+- 🌐 **Browser Automation**: Playwright handles complex browser interactions when needed, with fallback for visual tasks.
+- 🖥️ **User-Friendly Interface**: Built with Electron for a seamless desktop experience, including task management and scheduling.
+- 🔄 **Self-Correcting Loop**: The agent adapts to errors or unexpected results by re-evaluating and choosing alternative actions.
+
+---
+
+## 📖 Usage Guide
+
+1. **Launch the Application**:
+   - Run `npm start` to open the Electron app.
+2. **Enter a Goal**:
+   - In the UI, type a natural language goal (e.g., "Summarize the latest AI research papers from arXiv").
+3. **Review the Plan**:
+   - The agent will generate a step-by-step plan for approval.
+4. **Execute the Task**:
+   - Approve the plan, and the agent will autonomously execute it, using the appropriate tools.
+5. **Monitor Progress**:
+   - Watch the agent's progress in the UI, with logs and results displayed in real-time.
+6. **Stop or Adjust**:
+   - Pause or stop the agent at any time, or modify the goal to start a new task.
+
+---
+
+## 🛠️ Tech Stack
+
+- **Core AI**: OpenAI GPT-4o for planning and decision-making.
+- **Search**: Tavily AI for advanced web search.
+- **Scraping**: Firecrawl for reliable web data extraction.
+- **Browser Automation**: Playwright for browser control.
+- **Frontend/Backend**: Electron for the desktop application.
+- **Runtime**: Node.js for JavaScript execution.
+- **Dependencies**: Managed via npm.
