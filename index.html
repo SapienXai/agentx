@@ -30,7 +30,7 @@
                       aria-label="AI agent prompt"
                       placeholder="e.g., 'Scroll today's tech headlines and summarize the top 5 articles about AI.'"></textarea>
             <div class="action-buttons">
-                 <!-- The "Schedule" button is kept for UI consistency but is not functional in this implementation -->
+                <!-- Schedule button is decorative for now; functionality comes from prompt analysis -->
                 <button class="schedule-btn" disabled>schedule</button>
                 <button id="run-button" class="primary">Create & Run Agent</button>
             </div>
@@ -46,19 +46,67 @@
             </nav>
 
             <div id="task-lists-wrapper">
-                <!-- Task items will be injected by renderer.js -->
-                <div id="tasks-list" class="task-list"></div>
-                <div id="queue-list" class="task-list" style="display: none;"></div>
-                <div id="scheduled-tasks" class="task-list" style="display: none;"></div>
-                <div id="archived-tasks" class="task-list" style="display: none;"></div>
-                
-                <!-- NEW: Better Empty State -->
-                <div id="no-tasks-message" class="empty-state d-none">
-                    <svg class="empty-state-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zM8.5 12c.83 0 1.5-.67 1.5-1.5S9.33 9 8.5 9 7 9.67 7 10.5 7.67 12 8.5 12zm7 0c.83 0 1.5-.67 1.5-1.5S16.33 9 15.5 9s-1.5.67-1.5 1.5.67 1.5 1.5 1.5zm-4.03 3.44c1.33.67 2.73.67 4.06 0 .23-.11.38-.34.35-.59-.03-.25-.23-.45-.48-.51-1.12-.28-2.3-.28-3.42 0-.25.06-.45.26-.48.51-.03.25.11.48.35.59z"/></svg>
-                    <h3>Ready for my first mission!</h3>
-                    <p class="text-muted">Create a task above to get started.</p>
+                <!-- Tasks List with its Empty State -->
+                <div id="tasks-list" class="task-list">
+                    <div class="empty-state-wrapper">
+                        <svg class="empty-state-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zM8.5 12c.83 0 1.5-.67 1.5-1.5S9.33 9 8.5 9 7 9.67 7 10.5 7.67 12 8.5 12zm7 0c.83 0 1.5-.67 1.5-1.5S16.33 9 15.5 9s-1.5.67-1.5 1.5.67 1.5 1.5 1.5zm-4.03 3.44c1.33.67 2.73.67 4.06 0 .23-.11.38-.34.35-.59-.03-.25-.23-.45-.48-.51-1.12-.28-2.3-.28-3.42 0-.25.06-.45.26-.48.51-.03.25.11.48.35.59z"/></svg>
+                        <h3>Ready for my first mission!</h3>
+                        <p class="text-muted">Create a task above or try one of these examples.</p>
+                        <div class="example-tasks">
+                            <div class="example-task-card" data-goal="Find the top 3 AI news headlines on Google News and summarize them.">
+                                <h4>Summarize News</h4>
+                                <p>Searches Google News for the latest on AI and provides a summary.</p>
+                                <button class="example-run-btn">Try it</button>
+                            </div>
+                            <div class="example-task-card" data-goal="Go to ycombinator.com/jobs and find 3 remote software engineer jobs.">
+                                <h4>Find Jobs</h4>
+                                <p>Scans Y Combinator Jobs for remote software engineering roles.</p>
+                                <button class="example-run-btn">Try it</button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
-
+                <!-- Queue List with its Empty State -->
+                <div id="queue-list" class="task-list" style="display: none;">
+                    <div class="empty-state-wrapper">
+                        <svg class="empty-state-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z"/></svg>
+                        <h3>The Queue is Empty</h3>
+                        <p class="text-muted">When you run a task, it will appear here while waiting to execute. Tasks run one at a time to ensure focus.</p>
+                    </div>
+                </div>
+                <!-- Scheduled List with its Empty State -->
+                <div id="scheduled-tasks" class="task-list" style="display: none;">
+                    <div class="empty-state-wrapper">
+                        <svg class="empty-state-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M19 3h-1V1h-2v2H8V1H6v2H5c-1.11 0-1.99.9-1.99 2L3 19c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11zM7 10h5v5H7v-5z"/></svg>
+                        <h3>No Scheduled Tasks</h3>
+                        <p class="text-muted">Create a recurring task by including a schedule in your goal, like "every morning at 8am".</p>
+                        <div class="example-tasks">
+                            <div class="example-task-card" data-goal="Check the top story on Hacker News every hour and summarize it.">
+                                <h4>Hourly News Check</h4>
+                                <p>Fetches and summarizes the top post on Hacker News every hour.</p>
+                                <button class="example-run-btn">Try it</button>
+                            </div>
+                            <div class="example-task-card" data-goal="Find a new motivational quote and post it to my Twitter every morning at 9am.">
+                                <h4>Daily Twitter Post</h4>
+                                <p>Posts a fresh motivational quote to a connected account daily.</p>
+                                <button class="example-run-btn">Try it</button>
+                            </div>
+                             <div class="example-task-card" data-goal="Check for new remote marketing jobs on LinkedIn every weekday at 5pm.">
+                                <h4>Weekday Job Search</h4>
+                                <p>Performs a job search on LinkedIn every weekday evening.</p>
+                                <button class="example-run-btn">Try it</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <!-- Archived List with its Empty State -->
+                <div id="archived-tasks" class="task-list" style="display: none;">
+                    <div class="empty-state-wrapper">
+                        <svg class="empty-state-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M20.54 5.23l-1.39-1.68C18.88 3.21 18.47 3 18 3H6c-.47 0-.88.21-1.16.55L3.46 5.23C3.17 5.57 3 6.02 3 6.5V19c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V6.5c0-.48-.17-.93-.46-1.27zM6.24 5h11.52l.83 1H5.42l.82-1zM5 19V8h14v11H5z"/></svg>
+                        <h3>Archive is Empty</h3>
+                        <p class="text-muted">Completed, stopped, or failed tasks can be archived here to keep your main list clean.</p>
+                    </div>
+                </div>
             </div>
         </main>
     </div>

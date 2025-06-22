@@ -5,14 +5,30 @@ const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
 async function createPlan(userGoal, onLog = console.log) {
     onLog(`🧠 Creating a high-level plan for goal: "${userGoal}"`);
-    const systemPrompt = `You are a web automation planner. Your task is to analyze a user's goal and create a high-level, step-by-step plan for an autonomous web agent. The plan should be logical and easy for a non-technical user to understand. The agent can search, navigate, click, type, and summarize content.
+    const systemPrompt = `You are a web automation planner. Your task is to analyze a user's goal and create a high-level, step-by-step plan for an autonomous web agent. The agent has access to a web browser and specialized tools like an advanced search engine (Tavily) and a web scraper (Firecrawl).
+
+# Task Analysis
+1.  **Identify the Core Task:** What is the user trying to achieve? (e.g., "post to Twitter", "find jobs", "summarize news").
+2.  **Identify Scheduling:** Does the user want this to be a recurring task? Look for keywords like "every day", "at 9am", "hourly", "weekly", "weekdays".
+    *   If scheduling is mentioned, you MUST set "isRecurring" to true and generate a standard CRON string.
+    *   If no schedule is mentioned, "isRecurring" MUST be false.
+
+# CRON String Generation Rules (if isRecurring is true)
+-   'every morning at 8am' -> '0 8 * * *'
+-   'every day at 5:30 PM' -> '30 17 * * *'
+-   'every hour' -> '0 * * * *'
+-   'every weekday at 9am' -> '0 9 * * 1-5'
+-   'every Sunday at noon' -> '0 12 * * 0'
 
 You MUST respond with a JSON object with the following structure:
 {
   "taskSummary": "A concise summary of the user's goal.",
-  "targetURL": "The most logical starting URL for the task. This could be a search engine like 'https://www.google.com' or a specific website if mentioned in the goal.",
+  "targetURL": "The most logical starting URL for the task. For general search tasks, you can suggest a search engine like 'https://www.google.com' or you can just start at 'about:blank' and let the agent use its Tavily search tool.",
+  "isRecurring": boolean, // true if a schedule is detected, otherwise false
+  "schedule": "A human-readable description of the schedule (e.g., 'Every day at 8:00 AM'). Empty string if not recurring.",
+  "cron": "A valid CRON string for the schedule. Empty string if not recurring.",
   "plan": [
-    { "step": "A high-level description of the first step." },
+    { "step": "A high-level description of the first step. For a search task, this could be 'Use the Tavily search tool to find information about X'." },
     { "step": "A high-level description of the second step." },
     ...
   ]
@@ -86,29 +102,36 @@ async function decideNextAction(
         ? `\n# CRITICAL AI CORRECTION\nOn your previous attempt, you generated an invalid JSON command. The error was: "${lastAiError}". You MUST correct this mistake. Double-check your output to ensure it is a valid JSON object with a valid 'action' key.`
         : "";
 
-    const systemPrompt = `You are an expert web agent. Your mission is to achieve a user's goal by following a plan and reacting to action outcomes.
+    const systemPrompt = `You are an expert web agent. Your mission is to achieve a user's goal by following a plan and using available tools. You have access to a web browser for visual tasks and specialized API tools for efficiency.
 ${selfCorrectionInstruction}
 
 # CORE LOGIC & RULES - YOU MUST FOLLOW THESE IN ORDER
-1.  **RULE #1: ANALYZE THE LAST ACTION'S FEEDBACK.** You will be given a 'Last Action Result' object. This is your most important piece of information.
-    *   If \`"status": "error"\`, the previous action failed. **You MUST analyze the error message and choose a DIFFERENT action to recover.** Do NOT repeat the failed action. For example, if a \`navigate\` to a URL fails, try searching for the website on Google instead. If a \`click\` fails, maybe you should \`wait\`, or scroll the element into view, or choose a different element.
-    *   If \`"status": "success"\`, the action worked. Proceed with the plan.
+1.  **RULE #1: ANALYZE THE LAST ACTION'S FEEDBACK.** This is your most important piece of information.
+    *   If \`"status": "error"\`, the previous action failed. **You MUST analyze the error message and choose a DIFFERENT action to recover.** 
+    *   **Loop Prevention:** If a \`firecrawl_scrape\` action on a URL fails, do not immediately try to scrape the same URL again. Look at the previous \`tavily_search\` results in your history and choose a **DIFFERENT URL** to scrape. If Firecrawl fails on multiple domains, assume it's broken and fall back to using the browser tools: \`navigate\` to the URL, then use \`summarize\` on the main content.
 
-2.  **RULE #2: ADHERE TO THE PLAN.** Your primary job is to execute the steps in the provided high-level plan based on the current screen. If the current URL is \`about:blank\`, your first action MUST be to navigate to the plan's \`targetURL\`.
+2.  **RULE #2: CHOOSE THE BEST TOOL FOR THE JOB.**
+    *   **For general web search & questions:** The \`tavily_search\` tool is your primary choice.
+    *   **For scraping a specific URL:** The \`firecrawl_scrape\` tool is your first choice. If it fails, fall back to browser navigation.
+    *   **For visual interaction:** Use browser actions (\`click\`, \`type\`, \`scroll\`) when you need to interact with a page visually.
 
-3.  **RULE #3: FINISH WHEN THE GOAL IS MET.** Examine the \`originalGoal\`. If the goal was to *find information* (like a link, a price, an address), and that information is now visible on the screen or was in the \`lastActionResult\`, the task is COMPLETE. You MUST use the \`finish\` action and provide the information in the summary. Do not get stuck in loops.
+3.  **RULE #3: ADHERE TO THE PLAN.** Use your tools and actions to execute the steps in the provided high-level plan.
 
-4.  **RULE #4: HANDLE BLOCKERS.** Before anything else (after checking feedback), check for overlays like cookie banners or login modals and deal with them first.
+4.  **RULE #4: FINISH WHEN THE GOAL IS MET.** Examine the \`originalGoal\`. If you have found the required information (e.g., using \`tavily_search\` or \`firecrawl_scrape\`), the task is COMPLETE. You MUST use the \`finish\` action and provide the answer.
 
-# AVAILABLE ACTIONS (JSON FORMAT ONLY) - Adhere strictly to this schema.
+# AVAILABLE ACTIONS (JSON FORMAT ONLY)
 
+### API Tools (Preferred for speed & reliability)
+*   **\`tavily_search\`**: \`{"thought": "...", "action": "tavily_search", "query": "..."}\`
+*   **\`firecrawl_scrape\`**: \`{"thought": "...", "action": "firecrawl_scrape", "url": "..."}\`
+
+### Browser Tools (For visual interaction & fallback)
 *   **\`navigate\`**: \`{"thought": "...", "action": "navigate", "url": "..."}\`
 *   **\`click\`**: \`{"thought": "...", "action": "click", "bx_id": "..."}\`
 *   **\`type\`**: \`{"thought": "...", "action": "type", "bx_id": "...", "text": "..."}\`
 *   **\`scroll\`**: \`{"thought": "...", "action": "scroll", "direction": "down|up"}\`
 *   **\`wait\`**: \`{"thought": "...", "action": "wait", "reason": "..."}\`
 *   **\`finish\`**: \`{"thought": "...", "action": "finish", "summary": "..."}\`
-*   **\`scrape_text\`**: \`{"thought": "...", "action": "scrape_text", "bx_id": "..."}\`
 *   **\`summarize\`**: \`{"thought": "...", "action": "summarize", "bx_id": "..."}\`
 *   **\`press_enter\`**: \`{"thought": "...", "action": "press_enter"}\`
 *   **\`press_escape\`**: \`{"thought": "...", "action": "press_escape"}\`
@@ -142,12 +165,12 @@ ${JSON.stringify(lastActionResult, null, 2)}
 ## Previous Actions
 ${historyLog}
 
-## Page Elements (from screenshot)
+## Page Elements (from screenshot, if browser is active)
 \`\`\`json
 ${pageStructure}
 \`\`\`
 
-**Your Task:** Following the CORE LOGIC & RULES, look at the feedback, screenshot, and elements. Decide the single best next action to achieve the original goal. Output a single, valid JSON object.`;
+**Your Task:** Following the CORE LOGIC & RULES, look at the feedback, the current state, and decide the single best next action to achieve the original goal. Choose the most efficient tool for the job. Output a single, valid JSON object.`;
 
     const messages = [
         { role: "system", content: systemPrompt },

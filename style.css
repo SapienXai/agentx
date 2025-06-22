@@ -94,25 +94,90 @@ body {
 .task-list { display: flex; flex-direction: column; gap: 15px; }
 
 /* --- NEW: Empty State Styling --- */
-.empty-state {
+.empty-state-wrapper {
     text-align: center;
     padding: 60px 20px;
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: 15px;
-    opacity: 0.6;
+    opacity: 0.7;
+    width: 100%;
 }
 .empty-state-icon {
-    width: 80px;
-    height: 80px;
+    width: 60px;
+    height: 60px;
     color: var(--text-secondary);
 }
-.empty-state h3 {
+.empty-state-wrapper h3 {
     font-size: 18px;
     font-weight: 500;
     color: var(--text-primary);
 }
+.empty-state-wrapper .text-muted {
+    max-width: 400px;
+    line-height: 1.5;
+}
+.empty-state-wrapper.d-none {
+    display: none;
+}
+
+/* NEW: Example Task Styles */
+.example-tasks {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    margin-top: 30px;
+    width: 100%;
+}
+.example-task-card {
+    background-color: var(--surface-darker);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 15px;
+    text-align: left;
+    display: grid;
+    grid-template-areas: "title button" "desc button";
+    grid-template-columns: 1fr auto;
+    gap: 5px 15px;
+    align-items: center;
+    cursor: pointer;
+    transition: background-color 0.2s, transform 0.2s;
+}
+.example-task-card:hover {
+    background-color: var(--surface-active);
+    transform: translateY(-2px);
+}
+.example-task-card h4 {
+    grid-area: title;
+    font-size: 15px;
+    font-weight: 600;
+    margin: 0;
+    color: var(--text-bright);
+}
+.example-task-card p {
+    grid-area: desc;
+    font-size: 14px;
+    color: var(--text-secondary);
+    line-height: 1.4;
+    margin: 0;
+}
+.example-run-btn {
+    grid-area: button;
+    background-color: var(--primary-action);
+    color: var(--text-bright);
+    border: none;
+    border-radius: 8px;
+    padding: 8px 15px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+.example-run-btn:hover {
+    background-color: var(--primary-action-hover);
+}
+
 
 /* --- Task Item Styling --- */
 .task-item { background-color: var(--surface-color); border-radius: 12px; overflow: hidden; transition: background-color 0.2s ease, opacity 0.3s, transform 0.3s; animation: pop-in 0.4s cubic-bezier(0.34, 1.56, 0.64, 1); }

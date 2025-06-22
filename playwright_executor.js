@@ -5,6 +5,7 @@ const path = require('path');
 const { chromium } = require('playwright');
 const sharp = require('sharp');
 const { decideNextAction, summarizeText, composePost } = require('./agent_api.js');
+const { tavilySearch, firecrawlScrape } = require('./tools.js');
 
 const MAX_AGENT_STEPS = 25;
 const MAX_ACTION_HISTORY = 10;
@@ -109,7 +110,6 @@ async function runAutonomousAgent(userGoal, plan, onLog, agentControl, screenSiz
   
   let page = context.pages().length > 0 ? context.pages()[0] : await context.newPage();
   
-  // +++ FIX: Start at a blank page to ensure the loop is always entered +++
   await page.goto('about:blank');
 
   const tracePath = path.join(__dirname, `trace_${Date.now()}.zip`);
@@ -128,28 +128,32 @@ async function runAutonomousAgent(userGoal, plan, onLog, agentControl, screenSiz
         const currentURL = page.url();
         const credentials = getCredentialsForUrl(currentURL);
         
-        onLog("Visual analysis: Labeling interactive elements...");
-        const pageElements = await getInteractiveElements(page, onLog);
-        if (pageElements.length === 0 && currentURL !== 'about:blank') {
-            onLog("...No elements found, likely due to a page navigation or an empty page. Retrying step...");
-            await page.waitForLoadState('domcontentloaded', { timeout: 10000 }).catch(() => {});
-            continue;
+        let pageElements = [];
+        let screenshotBase64 = '';
+
+        // Only do browser-specific analysis if the agent isn't exclusively using API tools
+        if (currentURL !== 'about:blank') {
+            onLog("Visual analysis: Labeling interactive elements...");
+            pageElements = await getInteractiveElements(page, onLog);
+            if (pageElements.length === 0 && currentURL !== 'about:blank') {
+                onLog("...No elements found, likely due to a page navigation or an empty page. Retrying step...");
+                await page.waitForLoadState('domcontentloaded', { timeout: 10000 }).catch(() => {});
+                continue;
+            }
+            onLog("📸 Taking and annotating screenshot for analysis...");
+            const rawScreenshot = await page.screenshot();
+            const annotatedScreenshot = await annotateScreenshot(rawScreenshot, pageElements);
+            screenshotBase64 = annotatedScreenshot.toString('base64');
         }
 
         const structureString = JSON.stringify(pageElements, null, 2);
-
-        onLog("📸 Taking and annotating screenshot for analysis...");
-        const rawScreenshot = await page.screenshot();
-        const annotatedScreenshot = await annotateScreenshot(rawScreenshot, pageElements);
-        const screenshotBase64 = annotatedScreenshot.toString('base64');
         
         let command;
         let commandIsValid = false;
         let aiRetries = 0;
         let lastAiError = "";
 
-        // +++ FIX: Handle initial navigation as part of the loop +++
-        if (currentURL === 'about:blank') {
+        if (currentURL === 'about:blank' && plan.targetURL !== 'about:blank') {
             onLog("Initial state detected, forcing navigation to target URL.");
             command = {
                 thought: `The page is blank. I must navigate to the starting URL from the plan: ${plan.targetURL}`,
@@ -188,6 +192,18 @@ async function runAutonomousAgent(userGoal, plan, onLog, agentControl, screenSiz
 
         try {
             switch (command.action) {
+                case 'tavily_search':
+                    onLog(`▶️ Action: Tavily Search with query: "${command.query}"`);
+                    const searchResult = await tavilySearch(command.query, onLog);
+                    lastActionResult = { status: "success", message: searchResult };
+                    onLog(`   ... Tavily Result: "${searchResult.slice(0, 200)}..."`);
+                    break;
+                case 'firecrawl_scrape':
+                    onLog(`▶️ Action: Firecrawl Scrape of URL: "${command.url}"`);
+                    const scrapeResult = await firecrawlScrape(command.url, onLog);
+                    lastActionResult = { status: "success", message: scrapeResult };
+                    onLog(`   ... Firecrawl Result (Markdown): "${scrapeResult.slice(0, 200)}..."`);
+                    break;
                 case 'navigate':
                     onLog(`▶️ Action: Navigating to ${command.url}`);
                     await page.goto(command.url, { waitUntil: 'domcontentloaded', timeout: 30000 });

@@ -11,6 +11,8 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@mendable/firecrawl-js": "^1.26.0",
+    "@tavily/core": "^0.5.7",
     "axios": "^1.7.2",
     "dotenv": "^16.4.5",
     "electron": "^31.7.7",

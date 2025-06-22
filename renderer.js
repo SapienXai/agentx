@@ -11,7 +11,6 @@ const tasksList = document.getElementById('tasks-list');
 const queueList = document.getElementById('queue-list');
 const scheduledTasksList = document.getElementById('scheduled-tasks');
 const archivedTasksList = document.getElementById('archived-tasks');
-const noTasksMessage = document.getElementById('no-tasks-message');
 const tabLinks = document.querySelectorAll('.tab-link');
 const taskListsWrapper = document.getElementById('task-lists-wrapper');
 const toastContainer = document.getElementById('toast-container');
@@ -42,12 +41,12 @@ function showToast(message, type = 'info') {
 
     setTimeout(() => {
         toast.classList.add('show');
-    }, 100); // Small delay to allow element to be added to DOM before transition
+    }, 100);
 
     setTimeout(() => {
         toast.classList.remove('show');
         toast.addEventListener('transitionend', () => toast.remove());
-    }, 5000); // Toast disappears after 5 seconds
+    }, 5000);
 }
 
 // --- WEBSOCKET ---
@@ -59,6 +58,14 @@ socket.onmessage = (event) => {
     const command = parts[0];
     const payload = parts.slice(1).join('::');
     const taskId = parseInt(taskIdStr);
+
+    if (command === 'NEW_TASK_INSTANCE') {
+        const newTask = JSON.parse(payload);
+        taskHistory.push(newTask);
+        renderTasks();
+        switchToTab('queue-list');
+        return;
+    }
 
     if (isNaN(taskId)) {
         console.log("Generic Log:", event.data);
@@ -205,7 +212,7 @@ const createTaskElement = (task) => {
     const details = document.createElement('details');
     details.className = 'task-item';
     details.dataset.taskId = task.id;
-    if (['running', 'pending', 'queued', 'completed'].includes(task.status)) {
+    if (['running', 'pending', 'queued', 'completed', 'scheduled'].includes(task.status)) {
         details.open = true;
     }
 
@@ -219,7 +226,6 @@ const createTaskElement = (task) => {
 
     const detailsContent = document.createElement('div');
     detailsContent.className = 'task-details-content';
-    // The getTaskDetails now returns a DOM element to be appended
     detailsContent.appendChild(getTaskDetails(task));
 
     details.appendChild(summary);
@@ -230,32 +236,35 @@ const createTaskElement = (task) => {
 const renderTasks = () => {
     localStorage.setItem('taskHistory', JSON.stringify(taskHistory));
 
-    tasksList.innerHTML = '';
-    queueList.innerHTML = '';
-    scheduledTasksList.innerHTML = '';
-    archivedTasksList.innerHTML = '';
-
     const queue = taskHistory.filter(t => !t.archived && ['queued', 'running'].includes(t.status));
     const scheduled = taskHistory.filter(t => !t.archived && t.status === 'scheduled');
     const archived = taskHistory.filter(t => t.archived);
-    const tasks = taskHistory.filter(t => !t.archived && !queue.includes(t) && !scheduled.includes(t));
+    const tasks = taskHistory.filter(t => !t.archived && !queue.includes(t) && !scheduled.includes(t) && t.status !== 'pending');
+    const pending = taskHistory.filter(t => t.status === 'pending');
 
-    if (taskHistory.length === 0) {
-        noTasksMessage.classList.remove('d-none');
-    } else {
-        noTasksMessage.classList.add('d-none');
-    }
+    const renderList = (listElement, tasks) => {
+        listElement.querySelectorAll('.task-item').forEach(el => el.remove());
+        const emptyState = listElement.querySelector('.empty-state-wrapper');
 
+        if (tasks.length === 0) {
+            if (emptyState) emptyState.classList.remove('d-none');
+        } else {
+            if (emptyState) emptyState.classList.add('d-none');
+            const sortedTasks = [...tasks].sort((a,b) => b.id - a.id);
+            sortedTasks.forEach(task => listElement.appendChild(createTaskElement(task)));
+        }
+    };
+    
     queue.sort((a, b) => {
         if (a.status === 'running' && b.status !== 'running') return -1;
         if (a.status !== 'running' && b.status === 'running') return 1;
         return a.id - b.id;
     });
 
-    [...tasks].reverse().forEach(task => tasksList.appendChild(createTaskElement(task)));
-    queue.forEach(task => queueList.appendChild(createTaskElement(task)));
-    [...scheduled].reverse().forEach(task => scheduledTasksList.appendChild(createTaskElement(task)));
-    [...archived].reverse().forEach(task => archivedTasksList.appendChild(createTaskElement(task)));
+    renderList(tasksList, [...tasks, ...pending]); // Show pending tasks in the main list
+    renderList(queueList, queue);
+    renderList(scheduledTasksList, scheduled);
+    renderList(archivedTasksList, archived);
     
     const updateCountBadge = (badgeId, count) => {
         const badge = document.getElementById(badgeId);
@@ -277,7 +286,7 @@ const switchToTab = (targetId) => {
             link.classList.add('active');
         }
     });
-    document.querySelectorAll('.task-list, .empty-state').forEach(list => {
+    document.querySelectorAll('.task-list').forEach(list => {
         list.style.display = 'none';
     });
     document.getElementById(targetId).style.display = 'flex';
@@ -316,7 +325,7 @@ runButton.addEventListener('click', async () => {
             renderTasks();
             switchToTab('tasks-list');
         } else { 
-            showToast(`Failed to create plan: ${result.error}`, 'error');
+            showToast(`Failed to create plan: ${result.error || 'Unknown error'}`, 'error');
         }
     } catch (error) {
         showToast(`Network error: ${error.message}`, 'error');
@@ -327,6 +336,18 @@ runButton.addEventListener('click', async () => {
 });
 
 taskListsWrapper.addEventListener('click', async (e) => {
+    const exampleButton = e.target.closest('.example-run-btn, .example-task-card');
+    if (exampleButton) {
+        const card = exampleButton.closest('.example-task-card');
+        const goal = card.dataset.goal;
+        if (goal) {
+            goalInput.value = goal;
+            runButton.click();
+            goalInput.focus();
+        }
+        return;
+    }
+
     const button = e.target.closest('[data-action]');
     if (!button) return;
 
@@ -340,13 +361,20 @@ taskListsWrapper.addEventListener('click', async (e) => {
         case 'confirm':
             task.status = task.isRecurring ? 'scheduled' : 'queued';
             task.log += task.isRecurring ? "Confirmed. Scheduling task...\n" : "Confirmed. Adding to queue...\n";
+            
+            if (!task.isRecurring) {
+                switchToTab('queue-list');
+            } else {
+                switchToTab('scheduled-tasks');
+            }
+
             renderTasks();
             
             try {
                 const response = await fetch('/api/run-task', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ plan: task.plan, taskId: task.id }) });
                 if (!response.ok) {
                     const errorResult = await response.json();
-                    task.status = 'stopped';
+                    task.status = 'failed';
                     task.log += `Error: ${errorResult.error || 'Task could not be started.'}\n`;
                     renderTasks();
                 }
@@ -371,9 +399,7 @@ taskListsWrapper.addEventListener('click', async (e) => {
             try {
                 const stopResponse = await fetch('/api/stop-agent', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ taskId: task.id }) });
                 if (stopResponse.ok) {
-                    task.status = 'stopped';
-                    task.log += 'Schedule has been canceled by the user.\n';
-                    renderTasks();
+                    // The backend will send a TASK_STATUS_UPDATE, so no need to set it here
                 } else {
                     task.log += 'Error: Failed to cancel schedule on the server.\n';
                     button.disabled = false;
@@ -387,8 +413,8 @@ taskListsWrapper.addEventListener('click', async (e) => {
             break;
         case 'archive':
             task.archived = !task.archived;
-            taskItem.classList.add('archiving'); // Add class for animation
-            setTimeout(renderTasks, 300); // Wait for animation to finish
+            taskItem.classList.add('archiving');
+            setTimeout(renderTasks, 300);
             break;
     }
 });
@@ -400,7 +426,7 @@ tabLinks.forEach(tab => {
     });
 });
 
-// --- MODAL LOGIC (Animations are handled by CSS) ---
+// --- MODAL LOGIC ---
 let qrCodeFetched = false;
 const fetchQrCode = async () => {
     if (qrCodeFetched) return;
@@ -467,7 +493,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     task.progress = null;
                 }
                 if (task.status === 'pending') return null;
-                if (task.status === 'scheduled') task.log = (task.log || '') + `\n--- Application restarted. Schedule remains active. ---\n`;
+                // For this version, we are not persisting schedules across restarts.
+                if (task.status === 'scheduled') {
+                    task.status = 'stopped';
+                     task.log = (task.log || '') + `\n--- Schedule canceled due to application restart. Please reschedule. ---\n`;
+                }
                 return task;
             }).filter(Boolean);
         } catch (e) { 
@@ -476,6 +506,5 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
     document.getElementById('tasks-list').style.display = 'flex';
-    if(taskHistory.length === 0) noTasksMessage.classList.remove('d-none');
     renderTasks();
 });

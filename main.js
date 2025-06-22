@@ -87,17 +87,16 @@ function createWindow(win) {
             });
         });
     };
-
-    function scheduleTask(task) {
-        console.warn("Scheduling is not fully supported in the new goal-oriented model yet.");
-    }
     
     function saveSchedulesToFile() {
-        // ... unchanged ...
+        // This function would be more robust in a real app, saving active cron jobs
+        // For now, we are not persisting schedules across restarts.
+        console.log("Saving schedules is a stub for now.");
     }
 
     function loadAndRescheduleTasks() {
-        // ... unchanged ...
+        // This function would load from a file and restart cron jobs
+        console.log("Loading and rescheduling tasks is a stub for now.");
     }
     
     async function processQueue() {
@@ -168,28 +167,19 @@ function createWindow(win) {
         const aiPlan = await createPlan(goal, (msg) => console.log(`[PlanGen] ${msg}`));
 
         if (aiPlan) {
-            const fullPlan = {
-                ...aiPlan,
-                isRecurring: false,
-                requiresLogin: false, 
-                searchTerm: goal.split(' ').slice(0, 4).join(' '),
-                schedule: "",
-                cron: ""
-            };
-            res.json({ success: true, plan: fullPlan });
+            // The AI now provides all necessary fields, including for scheduling.
+            res.json({ success: true, plan: aiPlan });
         } else {
             console.log(`AI plan generation failed. Creating dummy plan for UI.`);
             const dummyPlan = {
                 taskSummary: goal,
                 plan: [{ step: "Agent will decide the best course of action dynamically (AI planner failed)." }],
                 isRecurring: false,
-                requiresLogin: false,
-                targetURL: "about:blank",
-                searchTerm: goal.split(' ').slice(0, 2).join(' '),
                 schedule: "",
-                cron: ""
+                cron: "",
+                targetURL: "about:blank",
             };
-            res.json({ success: true, plan: dummyPlan });
+            res.json({ success: false, plan: dummyPlan, error: "AI Planner failed to generate a valid plan." });
         }
     });
 
@@ -197,8 +187,47 @@ function createWindow(win) {
         const { plan, taskId } = req.body;
         
         if (plan.isRecurring) {
-            broadcast(`${taskId}::log::⚠️ Scheduling is not fully implemented in this version.`);
-            res.status(400).json({ success: false, error: "Scheduling not implemented." });
+            if (!plan.cron || !cron.validate(plan.cron)) {
+                const errorMsg = `Invalid or missing CRON string: "${plan.cron}"`;
+                broadcast(`${taskId}::log::🚨 ERROR: ${errorMsg}`);
+                broadcast(`${taskId}::TASK_STATUS_UPDATE::failed`);
+                return res.status(400).json({ success: false, error: errorMsg });
+            }
+
+            broadcast(`${taskId}::log::✅ Task scheduled successfully with schedule: "${plan.schedule}"`);
+            
+            const job = cron.schedule(plan.cron, () => {
+                console.log(`⏰ Cron job triggered for parent task ${taskId} (${plan.taskSummary})`);
+                const newRunTaskId = Date.now(); // Create a new, unique ID for this specific run
+                broadcast(`${taskId}::log::⏰ Triggering scheduled run. New task ID: ${newRunTaskId}`);
+                broadcast(`${taskId}::RUN_INCREMENT`);
+
+                // Create a new task instance for the queue
+                const taskInstance = {
+                    taskPlan: { ...plan, isRecurring: false, parentId: taskId }, // It's a single run now
+                    taskId: newRunTaskId
+                };
+                taskQueue.push(taskInstance);
+                
+                // Manually create the task in the frontend UI under the queue
+                const newTaskForUI = {
+                    id: newRunTaskId,
+                    summary: `Run of: ${plan.taskSummary}`,
+                    status: 'queued',
+                    startTime: new Date(),
+                    plan: taskInstance.taskPlan,
+                    isRecurring: false, // This instance is not recurring
+                    parentId: taskId,
+                    log: `Queued by schedule "${plan.schedule}".\n`,
+                };
+                broadcast(`${newRunTaskId}::NEW_TASK_INSTANCE::${JSON.stringify(newTaskForUI)}`);
+
+                processQueue();
+            });
+
+            scheduledJobs[taskId] = job;
+            res.json({ success: true, scheduled: true });
+
         } else {
             taskQueue.push({ taskPlan: plan, taskId });
             broadcast(`${taskId}::log::✅ Task has been added to the queue.`);
@@ -231,24 +260,7 @@ function createWindow(win) {
                 
                 scheduledJobs[taskId].stop();
                 delete scheduledJobs[taskId];
-
-                delete activeSchedules[taskId];
-                saveSchedulesToFile();
                 
-                const initialQueueLength = taskQueue.length;
-                taskQueue = taskQueue.filter(task => {
-                    if (task.plan && task.plan.parentId === taskId) {
-                        console.log(`... also removing its queued instance ${task.taskId}.`);
-                        broadcast(`${task.taskId}::TASK_STATUS_UPDATE::stopped`);
-                        broadcast(`${task.taskId}::log::⏹️ Parent schedule was canceled.`);
-                        return false;
-                    }
-                    return true;
-                });
-                if (taskQueue.length < initialQueueLength) {
-                    console.log(`... cleared ${initialQueueLength - taskQueue.length} instances from the queue.`);
-                }
-
                 broadcast(`${taskId}::TASK_STATUS_UPDATE::stopped`);
                 broadcast(`${taskId}::log::⏹️ Schedule has been canceled.`);
                 wasActionTaken = true;
