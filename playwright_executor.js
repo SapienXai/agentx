@@ -16,9 +16,12 @@ const USER_DATA_DIR = path.join(__dirname, 'playwright_session_data');
 
 async function getInteractiveElements(page, onLog) {
     try {
+        // Clear previous annotations
         await page.evaluate(() => {
             document.querySelectorAll('[data-bx-id]').forEach(el => el.removeAttribute('data-bx-id'));
         });
+
+        // Run the main evaluation in the browser
         const elements = await page.evaluate(() => {
             const selectors = [
                 'a[href]', 'button', 'input[type="button"]', 'input[type="submit"]',
@@ -26,20 +29,35 @@ async function getInteractiveElements(page, onLog) {
                 '[role="button"]', '[role="link"]', '[role="tab"]', '[role="checkbox"]', '[role="option"]', '[role="menuitem"]',
                 'select', '[onclick]'
             ];
+
+            // +++ THIS LINE WAS MISSING +++
             const interactiveElements = Array.from(document.querySelectorAll(selectors.join(', ')));
+
+            // Also get high-level content containers
             const contentElements = Array.from(document.querySelectorAll('h1, h2, h3, h4, main, article, section, [role="main"]'));
+            
+            // Now, interactiveElements is defined and can be used here
             const allElements = [...interactiveElements, ...contentElements];
 
+            // Filter for unique, visible elements
             const uniqueVisibleElements = [];
             const seenElements = new Set();
             allElements.forEach(el => {
                 const rect = el.getBoundingClientRect();
-                if (rect.width > 0 && rect.height > 0 && !seenElements.has(el)) {
+                const style = window.getComputedStyle(el);
+                if (
+                    rect.width > 0 &&
+                    rect.height > 0 &&
+                    style.visibility !== 'hidden' &&
+                    style.display !== 'none' &&
+                    !seenElements.has(el)
+                ) {
                     uniqueVisibleElements.push(el);
                     seenElements.add(el);
                 }
             });
             
+            // Map elements to a serializable format and assign IDs
             return uniqueVisibleElements.map((el, index) => {
                 const rect = el.getBoundingClientRect();
                 const id = `bx-${index}`;
@@ -60,6 +78,7 @@ async function getInteractiveElements(page, onLog) {
             onLog("...Page navigated before analysis could complete. The step will be retried.");
             return []; 
         } else {
+            // Rethrow other errors to be caught by the main loop
             throw error;
         }
     }
@@ -100,11 +119,11 @@ function getCredentialsForUrl(url) {
 
 function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
 
-async function runAutonomousAgent(userGoal, plan, onLog, agentControl, screenSize, promptForCredentials) {
+async function runAutonomousAgent(userGoal, plan, onLog, agentControl, promptForCredentials) {
   onLog(`🚀 Launching browser for goal: "${userGoal}"`);
   const context = await chromium.launchPersistentContext(USER_DATA_DIR, {
       headless: false,
-      viewport: screenSize || { width: 1280, height: 720 },
+      viewport: { width: 1280, height: 720 }, // Uses a default viewport size
       userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
   });
   
@@ -131,7 +150,6 @@ async function runAutonomousAgent(userGoal, plan, onLog, agentControl, screenSiz
         let pageElements = [];
         let screenshotBase64 = '';
 
-        // Only do browser-specific analysis if the agent isn't exclusively using API tools
         if (currentURL !== 'about:blank') {
             onLog("Visual analysis: Labeling interactive elements...");
             pageElements = await getInteractiveElements(page, onLog);
@@ -271,9 +289,14 @@ async function runAutonomousAgent(userGoal, plan, onLog, agentControl, screenSiz
                      onLog(`⏸️ Action: Requesting credentials.`);
                      const urlObject = new URL(page.url());
                      const domain = urlObject.hostname.replace('www.', '');
-                     await promptForCredentials(domain); 
-                     onLog('✅ Credentials received. Resuming agent...');
-                     lastActionResult = { status: "success", message: `Credentials for ${domain} were provided.` };
+                     // The promptForCredentials function is now passed in from the new server logic
+                     const result = await promptForCredentials(domain); 
+                     if (result.success) {
+                        onLog('✅ Credentials received. Resuming agent...');
+                        lastActionResult = { status: "success", message: `Credentials for ${domain} were provided.` };
+                     } else {
+                        throw new Error(`User canceled credential entry for ${domain}.`);
+                     }
                      break;
                 case 'wait':
                     onLog(`⏸️ Action: Waiting.`);
@@ -295,7 +318,7 @@ async function runAutonomousAgent(userGoal, plan, onLog, agentControl, screenSiz
     throw new Error('Agent reached maximum steps without finishing the goal.');
   } catch (err) {
     onLog(`🚨 FATAL ERROR: ${err.message}`);
-    if (!page.isClosed()) {
+    if (page && !page.isClosed()) {
         const errorScreenshotPath = path.join(__dirname, 'error-screenshot.png');
         await page.screenshot({ path: errorScreenshotPath, fullPage: true });
         onLog(`📸 Screenshot of failure saved to ${errorScreenshotPath}`);

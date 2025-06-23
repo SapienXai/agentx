@@ -1,0 +1,48 @@
+{
+    "build": {
+      "beforeDevCommand": "npm run start-backend",
+      "beforeBuildCommand": "npm install",
+      "devPath": "http://localhost:3000",
+      "distDir": "../",
+      "withGlobalTauri": true
+    },
+    "package": {
+      "productName": "AgentX",
+      "version": "1.0.0"
+    },
+    "tauri": {
+      "allowlist": {
+        "all": false,
+        "shell": {
+          "all": false,
+          "open": true
+        },
+        "window": {
+          "all": true
+        },
+        "notification": {
+          "all": true
+        }
+      },
+      "bundle": {
+        "active": true,
+        "targets": "all",
+        "identifier": "com.sapienx.agentx",
+        "icon": ["icons/icon.png"]
+      },
+      "security": {
+        "csp": "default-src 'self'; connect-src 'self' ws: wss:"
+      },
+      "windows": [
+        {
+          "fullscreen": false,
+          "resizable": true,
+          "title": "AgentX",
+          "width": 600,
+          "height": 850,
+          "minWidth": 550,
+          "minHeight": 700
+        }
+      ]
+    }
+  }

@@ -1,21 +1,22 @@
 {
-  "name": "puppeteer_ai_agentapi",
+  "name": "agentx-tauri",
   "version": "1.0.0",
-  "description": "",
+  "description": "An autonomous AI agent that understands natural language, creates a plan, and executes complex tasks in a web browser using specialized tools.",
   "main": "main.js",
   "scripts": {
-    "start": "electron .",
+    "start-backend": "node main.js",
+    "dev": "tauri dev",
+    "build": "tauri build",
     "test": "jest"
   },
   "keywords": [],
-  "author": "",
+  "author": "SapienX",
   "license": "ISC",
   "dependencies": {
     "@mendable/firecrawl-js": "^1.26.0",
     "@tavily/core": "^0.5.7",
     "axios": "^1.7.2",
     "dotenv": "^16.4.5",
-    "electron": "^31.7.7",
     "express": "^4.19.2",
     "node-cron": "^4.1.0",
     "playwright": "^1.53.0",
@@ -24,6 +25,7 @@
     "ws": "^8.18.0"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "^1.6.0",
     "@types/jest": "^29.5.12",
     "jest": "^30.0.0"
   }

@@ -18,7 +18,7 @@
 
 ---
 
-## 🚀 Getting Started
+## Getting Started
 
 Get the BrowserX Agent running on your machine in a few simple steps.
 
@@ -88,13 +88,19 @@ FIRECRAWL_API_KEY=fc-...
 
 ### 5. Run the Application
 
-You're all set! Start the agent with:
+You're all set! First, ensure all dependencies are installed:
 
 ```bash
-npm start
+npm install
 ```
 
-The Electron application window will open, and you can start giving the agent tasks.
+Then, start the agent with:
+
+```bash
+npm run dev
+```
+
+The Tauri application window will open, and you can start giving the agent tasks.
 
 <p align="center">
   <img src="./screenshot.png" alt="BrowserX Interface Screenshot" width="800"/>
@@ -104,7 +110,7 @@ The Electron application window will open, and you can start giving the agent ta
 
 ---
 
-## 💡 How It Works
+## How It Works
 
 The agent operates on a sophisticated loop that combines high-level planning with intelligent, tool-based execution. This "tool-first" approach makes it faster and more reliable than agents that rely solely on visual analysis.
 
@@ -128,21 +134,21 @@ The agent operates on a sophisticated loop that combines high-level planning wit
 
 ---
 
-## ✨ Key Features
+## Key Features
 
 - 🧠 **Advanced AI Planning**: Leverages GPT-4o to create structured, actionable plans from natural language inputs.
 - 🔍 **Intelligent Web Search**: Uses Tavily AI for optimized, AI-agent-friendly search results.
 - 📊 **Reliable Web Scraping**: Firecrawl ensures clean, structured data extraction from websites.
 - 🌐 **Browser Automation**: Playwright handles complex browser interactions when needed, with fallback for visual tasks.
-- 🖥️ **User-Friendly Interface**: Built with Electron for a seamless desktop experience, including task management and scheduling.
+- 🖥️ **User-Friendly Interface**: Built with Tauri for a seamless desktop experience, including task management and scheduling.
 - 🔄 **Self-Correcting Loop**: The agent adapts to errors or unexpected results by re-evaluating and choosing alternative actions.
 
 ---
 
-## 📖 Usage Guide
+## Usage Guide
 
 1. **Launch the Application**:
-   - Run `npm start` to open the Electron app.
+   - Run `npm run dev` to open the Tauri app.
 2. **Enter a Goal**:
    - In the UI, type a natural language goal (e.g., "Summarize the latest AI research papers from arXiv").
 3. **Review the Plan**:
@@ -156,12 +162,12 @@ The agent operates on a sophisticated loop that combines high-level planning wit
 
 ---
 
-## 🛠️ Tech Stack
+## Tech Stack
 
 - **Core AI**: OpenAI GPT-4o for planning and decision-making.
 - **Search**: Tavily AI for advanced web search.
 - **Scraping**: Firecrawl for reliable web data extraction.
 - **Browser Automation**: Playwright for browser control.
-- **Frontend/Backend**: Electron for the desktop application.
+- **Frontend/Backend**: Tauri for the desktop application.
 - **Runtime**: Node.js for JavaScript execution.
 - **Dependencies**: Managed via npm.
