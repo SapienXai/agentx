@@ -14,6 +14,7 @@
   "license": "ISC",
   "dependencies": {
     "@mendable/firecrawl-js": "^1.26.0",
+    "@modelcontextprotocol/sdk": "^1.0.0",
     "@tavily/core": "^0.5.7",
     "axios": "^1.7.2",
     "dotenv": "^16.4.5",
@@ -22,7 +23,8 @@
     "playwright": "^1.53.0",
     "qrcode": "^1.5.3",
     "sharp": "^0.34.2",
-    "ws": "^8.18.0"
+    "ws": "^8.18.0",
+    "zod": "^3.23.8"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^1.6.0",

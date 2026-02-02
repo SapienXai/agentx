@@ -3,10 +3,32 @@
 // --- STATE ---
 let taskHistory = [];
 let activeCredentialRequest = null;
+let authState = null;
+let authModalPinned = false;
+let currentPlanController = null;
+let latestPlannedTaskId = null;
+
+function getDefaultModel(provider) {
+    if (provider === 'codex') return 'gpt-5.1-codex-mini';
+    if (provider === 'gemini') return 'gemini-3-flash';
+    return '';
+}
 
 // --- SELECTORS ---
 const goalInput = document.getElementById('goal-input');
 const runButton = document.getElementById('run-button');
+const intentBadge = document.getElementById('intent-badge');
+const wizardPanel = document.getElementById('wizard-panel');
+const wizardStatus = document.getElementById('wizard-status');
+const wizardProgressBar = document.getElementById('wizard-progress-bar');
+const wizardStepInput = document.getElementById('wizard-step-input');
+const wizardStepIntent = document.getElementById('wizard-step-intent');
+const wizardStepPlan = document.getElementById('wizard-step-plan');
+const wizardStepQueue = document.getElementById('wizard-step-queue');
+const wizardStopButton = document.getElementById('wizard-stop');
+const wizardPlan = document.getElementById('wizard-plan');
+const wizardPlanSteps = document.getElementById('wizard-plan-steps');
+const wizardConfirmRun = document.getElementById('wizard-confirm-run');
 const tasksList = document.getElementById('tasks-list');
 const queueList = document.getElementById('queue-list');
 const scheduledTasksList = document.getElementById('scheduled-tasks');
@@ -18,10 +40,24 @@ const toastContainer = document.getElementById('toast-container');
 const archiveActionsHeader = document.getElementById('archive-actions');
 const clearArchiveBtn = document.getElementById('clear-archive-btn');
 const resetAllBtn = document.getElementById('reset-all-btn');
+const toggleTavily = document.getElementById('toggle-tavily');
+const toggleFirecrawl = document.getElementById('toggle-firecrawl');
+
+// Auth Modal Selectors
+const authModal = document.getElementById('auth-modal');
+const closeAuthModalButton = document.getElementById('close-auth-modal-button');
+const authStatusCodex = document.getElementById('auth-status-codex');
+const authStatusGemini = document.getElementById('auth-status-gemini');
+const authActionCodexBtn = document.getElementById('auth-action-codex');
+const authActionGeminiBtn = document.getElementById('auth-action-gemini');
+const authModelCodex = document.getElementById('auth-model-codex');
+const authModelGemini = document.getElementById('auth-model-gemini');
+const authRefreshBtn = document.getElementById('auth-refresh');
 
 // QR Modal Selectors
 const qrModal = document.getElementById('qr-modal');
 const connectButton = document.getElementById('connect-button');
+const loginButton = document.getElementById('login-button');
 const closeModalButton = document.getElementById('close-modal-button');
 const qrCodeImage = document.getElementById('qr-code-image');
 const qrSpinner = document.getElementById('qr-spinner');
@@ -46,6 +82,168 @@ function showToast(message, type = 'info') {
         toast.classList.remove('show');
         toast.addEventListener('transitionend', () => toast.remove());
     }, 5000);
+}
+
+function setWizardState({ statusText, activeStep, errorStep }) {
+    if (!wizardPanel) return;
+    wizardPanel.classList.remove('d-none');
+    if (wizardStatus) wizardStatus.textContent = statusText || 'Working...';
+    if (wizardStopButton) wizardStopButton.disabled = false;
+
+    const steps = [wizardStepInput, wizardStepIntent, wizardStepPlan, wizardStepQueue].filter(Boolean);
+    steps.forEach((step) => {
+        step.classList.remove('is-active', 'is-done', 'is-error');
+    });
+
+    const stepOrder = {
+        input: wizardStepInput,
+        intent: wizardStepIntent,
+        plan: wizardStepPlan,
+        queue: wizardStepQueue
+    };
+
+    let reachedActive = false;
+    Object.entries(stepOrder).forEach(([key, stepEl]) => {
+        if (!stepEl) return;
+        if (key === errorStep) {
+            stepEl.classList.add('is-error');
+            reachedActive = true;
+            return;
+        }
+        if (key === activeStep && !reachedActive) {
+            stepEl.classList.add('is-active');
+            reachedActive = true;
+            return;
+        }
+        if (!reachedActive) {
+            stepEl.classList.add('is-done');
+        }
+    });
+
+    const progressMap = { input: 20, intent: 45, plan: 70, queue: 100 };
+    if (wizardProgressBar) {
+        wizardProgressBar.style.width = `${progressMap[activeStep] || 0}%`;
+    }
+}
+
+function resetWizard() {
+    if (!wizardPanel) return;
+    wizardPanel.classList.add('d-none');
+    if (wizardStatus) wizardStatus.textContent = 'Idle';
+    if (wizardProgressBar) wizardProgressBar.style.width = '0%';
+    [wizardStepInput, wizardStepIntent, wizardStepPlan, wizardStepQueue].forEach(step => {
+        if (step) step.classList.remove('is-active', 'is-done', 'is-error');
+    });
+    if (wizardStepInput) wizardStepInput.classList.add('is-active');
+    if (wizardStopButton) wizardStopButton.disabled = true;
+    if (wizardPlan) wizardPlan.classList.add('d-none');
+    if (wizardPlanSteps) wizardPlanSteps.innerHTML = '';
+    latestPlannedTaskId = null;
+}
+
+function setAuthStatusBadge(el, status, isActive) {
+    if (!el || !status) return;
+    el.classList.remove('ready', 'missing');
+    if (isActive) {
+        el.textContent = 'Active';
+        el.classList.add('ready');
+        return;
+    }
+    if (!status.available) {
+        el.textContent = 'Not installed';
+        el.classList.add('missing');
+        return;
+    }
+    if (status.loggedIn) {
+        el.textContent = 'Logged in';
+        el.classList.add('ready');
+        return;
+    }
+    el.textContent = 'Login required';
+    el.classList.add('missing');
+}
+
+function updateAuthModal() {
+    if (!authState) return;
+    if (!authStatusCodex || !authStatusGemini || !authActionCodexBtn || !authActionGeminiBtn) {
+        console.error('Auth UI elements missing. Check index.html IDs.');
+        return;
+    }
+    const activeProvider = authState.activeProvider;
+    setAuthStatusBadge(authStatusCodex, authState.status.codex, activeProvider === 'codex');
+    setAuthStatusBadge(authStatusGemini, authState.status.gemini, activeProvider === 'gemini');
+
+    const codexStatus = authState.status.codex;
+    if (!codexStatus.available) {
+        authActionCodexBtn.textContent = 'Install Codex';
+        authActionCodexBtn.disabled = true;
+        authActionCodexBtn.dataset.action = 'install';
+    } else if (!codexStatus.loggedIn) {
+        authActionCodexBtn.textContent = 'Login with Codex';
+        authActionCodexBtn.disabled = false;
+        authActionCodexBtn.dataset.action = 'login';
+    } else if (activeProvider === 'codex') {
+        authActionCodexBtn.textContent = 'Active';
+        authActionCodexBtn.disabled = true;
+        authActionCodexBtn.dataset.action = 'active';
+    } else {
+        authActionCodexBtn.textContent = 'Use Codex';
+        authActionCodexBtn.disabled = false;
+        authActionCodexBtn.dataset.action = 'use';
+    }
+
+    const geminiStatus = authState.status.gemini;
+    if (!geminiStatus.available) {
+        authActionGeminiBtn.textContent = 'Install Gemini';
+        authActionGeminiBtn.disabled = true;
+        authActionGeminiBtn.dataset.action = 'install';
+    } else if (!geminiStatus.loggedIn) {
+        authActionGeminiBtn.textContent = 'Login with Gemini';
+        authActionGeminiBtn.disabled = false;
+        authActionGeminiBtn.dataset.action = 'login';
+    } else if (activeProvider === 'gemini') {
+        authActionGeminiBtn.textContent = 'Active';
+        authActionGeminiBtn.disabled = true;
+        authActionGeminiBtn.dataset.action = 'active';
+    } else {
+        authActionGeminiBtn.textContent = 'Use Gemini';
+        authActionGeminiBtn.disabled = false;
+        authActionGeminiBtn.dataset.action = 'use';
+    }
+
+    if (authModelCodex && authState.models && authState.models.codex) {
+        authModelCodex.value = authState.models.codex;
+    }
+    if (authModelGemini && authState.models && authState.models.gemini) {
+        authModelGemini.value = authState.models.gemini;
+    }
+    if (toggleTavily && authState.toggles) {
+        toggleTavily.checked = Boolean(authState.toggles.tavily);
+    }
+    if (toggleFirecrawl && authState.toggles) {
+        toggleFirecrawl.checked = Boolean(authState.toggles.firecrawl);
+    }
+
+    if (!authModalPinned) {
+        if (authState.activeProvider) {
+            authModal.classList.add('d-none');
+        } else {
+            authModal.classList.remove('d-none');
+        }
+    }
+}
+
+async function refreshAuthStatus() {
+    try {
+        const response = await fetch('/api/auth/status');
+        if (!response.ok) throw new Error('Failed to fetch auth status.');
+        const result = await response.json();
+        if (!result.success) throw new Error(result.error || 'Auth status failed.');
+        authState = result;
+        updateAuthModal();
+    } catch (error) {
+        showToast(`Auth status error: ${error.message}`, 'error');
+    }
 }
 
 // --- WEBSOCKET ---
@@ -137,6 +335,13 @@ const getProgressBar = (task) => {
     return `<div class="task-progress"><progress value="${task.progress.current}" max="${task.progress.total}"></progress><span>Step ${task.progress.current} of ${task.progress.total}</span></div>`;
 };
 
+const getLatestReason = (logText) => {
+    if (!logText) return '';
+    const matches = [...logText.matchAll(/🧠 Reason:\s*(.+)/g)];
+    if (!matches.length) return '';
+    return matches[matches.length - 1][1].trim();
+};
+
 const updateTaskProgressDisplay = (task) => {
     const taskEl = document.querySelector(`.task-item[data-task-id='${task.id}']`);
     if (!taskEl) return;
@@ -171,7 +376,8 @@ const getTaskActions = (task) => {
         case 'completed':
         case 'failed':
         case 'stopped':
-            return `<button class="task-action-btn" data-action="archive">${task.archived ? 'Restore' : 'Archive'}</button>`;
+            return `<button class="task-action-btn" data-action="rerun">Rerun</button>
+                    <button class="task-action-btn" data-action="archive">${task.archived ? 'Restore' : 'Archive'}</button>`;
         default:
             return '';
     }
@@ -226,8 +432,15 @@ const createTaskElement = (task) => {
 
     const summary = document.createElement('summary');
     summary.className = 'task-summary';
+    const providerTag = task.provider ? `<span class="provider-tag provider-${task.provider}">${task.provider.toUpperCase()}</span>` : '';
+    const effectiveModel = task.model || getDefaultModel(task.provider);
+    const modelTag = effectiveModel ? `<span class="model-tag">${effectiveModel}</span>` : '';
+    const latestReason = getLatestReason(task.log || '');
+    const reasonTag = latestReason ? `<span class="reason-tag">Reason: ${latestReason}</span>` : '';
     summary.innerHTML = `<div class="task-info">
-                <h3>${task.summary}</h3>
+                <h3>${task.summary} ${providerTag}</h3>
+                ${modelTag}
+                ${reasonTag}
                 <p>${new Date(task.startTime).toLocaleString()}</p>
             </div>
             <div class="task-status">${getStatusPill(task.status)}${getProgressBar(task)}</div>`;
@@ -307,18 +520,81 @@ const switchToTab = (targetId) => {
 };
 
 // --- EVENT LISTENERS ---
-runButton.addEventListener('click', async () => {
-    const goal = goalInput.value.trim();
+async function runGoal(goal) {
     if (!goal) {
         showToast('Please enter a goal for the agent.', 'error');
         return;
     }
+    if (!authState || !authState.activeProvider) {
+        showToast('Please log in with Codex or Gemini to run tasks.', 'error');
+        authModal.classList.remove('d-none');
+        return;
+    }
     runButton.disabled = true;
-    runButton.textContent = 'Planning...';
+    runButton.textContent = 'Thinking...';
     try {
-        const response = await fetch('/api/get-plan', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ goal }) });
-        const result = await response.json();
-        if (response.ok) {
+        currentPlanController = new AbortController();
+        setWizardState({ statusText: 'Understanding intent…', activeStep: 'intent' });
+        if (intentBadge) {
+            intentBadge.textContent = 'Detected: ...';
+            intentBadge.classList.remove('d-none');
+        }
+        const intentResponse = await fetch('/api/interpret-goal', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ goal }),
+            signal: currentPlanController.signal
+        });
+        const intentResult = await intentResponse.json();
+        if (!intentResponse.ok || !intentResult.success) {
+            throw new Error(intentResult.error || 'Failed to interpret goal.');
+        }
+
+        const { intent, response: directResponse, normalizedGoal } = intentResult.interpretation;
+        const finalGoal = normalizedGoal || goal;
+        if (intentBadge) {
+            intentBadge.textContent = `Detected: ${intent}`;
+            intentBadge.classList.remove('d-none');
+        }
+
+        if (intent === 'chat') {
+            setWizardState({ statusText: 'Responding…', activeStep: 'plan' });
+            const newTask = {
+                id: Date.now(),
+                summary: finalGoal,
+                status: 'completed',
+                startTime: new Date(),
+                plan: null,
+                isRecurring: false,
+                archived: false,
+                log: `Direct response generated for "${finalGoal}".\n`,
+                progress: null,
+                result: directResponse || 'Bunu yanıtlayacak bilgi yok.',
+                runCount: 0,
+                provider: authState.activeProvider,
+                model: authState.models && authState.models[authState.activeProvider]
+                    ? authState.models[authState.activeProvider]
+                    : getDefaultModel(authState.activeProvider),
+                originalGoal: finalGoal
+            };
+            taskHistory.push(newTask);
+            goalInput.value = '';
+            renderTasks();
+            switchToTab('tasks-list');
+            showToast('Direct answer provided.', 'success');
+            setWizardState({ statusText: 'Done', activeStep: 'queue' });
+            return;
+        }
+
+        if (intent === 'schedule') {
+            showToast('Recurring task detected. Preparing a schedule-aware plan...', 'info');
+        }
+
+        setWizardState({ statusText: 'Generating plan…', activeStep: 'plan' });
+        const planResponse = await fetch('/api/get-plan', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ goal: finalGoal }), signal: currentPlanController.signal });
+        const result = await planResponse.json();
+        if (planResponse.ok) {
+            setWizardState({ statusText: 'Plan ready', activeStep: 'queue' });
             const newTask = {
                 id: Date.now(),
                 summary: result.plan.taskSummary,
@@ -330,22 +606,96 @@ runButton.addEventListener('click', async () => {
                 log: `Plan for "${result.plan.taskSummary}" received. ${result.plan.isRecurring ? 'Please confirm to schedule.' : 'Please confirm to run.'}\n`,
                 progress: null,
                 result: null,
-                runCount: 0
+                runCount: 0,
+                provider: authState.activeProvider,
+                model: authState.models && authState.models[authState.activeProvider]
+                    ? authState.models[authState.activeProvider]
+                    : getDefaultModel(authState.activeProvider),
+                originalGoal: finalGoal
             };
             taskHistory.push(newTask);
             goalInput.value = '';
+            latestPlannedTaskId = newTask.id;
+            if (wizardPlan && wizardPlanSteps) {
+                wizardPlan.classList.remove('d-none');
+                wizardPlanSteps.innerHTML = '';
+                const steps = (result.plan.plan || []).slice(0, 4);
+                steps.forEach(step => {
+                    const li = document.createElement('li');
+                    li.textContent = step.step;
+                    wizardPlanSteps.appendChild(li);
+                });
+            }
             renderTasks();
             switchToTab('tasks-list');
         } else { 
             showToast(`Failed to create plan: ${result.error || 'Unknown error'}`, 'error');
+            setWizardState({ statusText: 'Plan failed', activeStep: 'plan', errorStep: 'plan' });
         }
     } catch (error) {
+        if (error.name === 'AbortError') {
+            showToast('Planning stopped.', 'info');
+            resetWizard();
+            return;
+        }
         showToast(`Network error: ${error.message}`, 'error');
+        setWizardState({ statusText: 'Network error', activeStep: 'intent', errorStep: 'intent' });
     } finally {
         runButton.disabled = false;
         runButton.textContent = 'Create & Run Agent';
+        currentPlanController = null;
+        if (wizardStopButton) wizardStopButton.disabled = true;
     }
+}
+
+runButton.addEventListener('click', async () => {
+    const goal = goalInput.value.trim();
+    await runGoal(goal);
 });
+
+async function confirmAndRunTask(task) {
+    if (!task) return;
+    task.status = task.isRecurring ? 'scheduled' : 'queued';
+    task.log += task.isRecurring ? "Confirmed. Scheduling task...\n" : "Confirmed. Adding to queue...\n";
+
+    renderTasks();
+    try {
+        const response = await fetch('/api/run-task', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ plan: task.plan, taskId: task.id })
+        });
+        if (!response.ok) {
+            const errorResult = await response.json();
+            task.status = 'failed';
+            task.log += `Error: ${errorResult.error || 'Task could not be started.'}\n`;
+            renderTasks();
+        }
+    } catch (error) {
+        task.status = 'failed';
+        task.log += `Network Error: ${error.message}\n`;
+        renderTasks();
+    }
+}
+
+if (wizardConfirmRun) {
+    wizardConfirmRun.addEventListener('click', async () => {
+        const task = taskHistory.find(t => t.id === latestPlannedTaskId);
+        if (!task) {
+            showToast('No plan available to run.', 'error');
+            return;
+        }
+        await confirmAndRunTask(task);
+    });
+}
+
+if (wizardStopButton) {
+    wizardStopButton.addEventListener('click', () => {
+        if (currentPlanController) {
+            currentPlanController.abort();
+        }
+    });
+}
 
 taskListsWrapper.addEventListener('click', async (e) => {
     const exampleButton = e.target.closest('.example-run-btn, .example-task-card');
@@ -371,29 +721,11 @@ taskListsWrapper.addEventListener('click', async (e) => {
 
     switch (action) {
         case 'confirm':
-            task.status = task.isRecurring ? 'scheduled' : 'queued';
-            task.log += task.isRecurring ? "Confirmed. Scheduling task...\n" : "Confirmed. Adding to queue...\n";
-            
+            await confirmAndRunTask(task);
             if (!task.isRecurring) {
                 switchToTab('queue-list');
             } else {
                 switchToTab('scheduled-tasks');
-            }
-
-            renderTasks();
-            
-            try {
-                const response = await fetch('/api/run-task', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ plan: task.plan, taskId: task.id }) });
-                if (!response.ok) {
-                    const errorResult = await response.json();
-                    task.status = 'failed';
-                    task.log += `Error: ${errorResult.error || 'Task could not be started.'}\n`;
-                    renderTasks();
-                }
-            } catch (error) {
-                task.status = 'failed';
-                task.log += `Network Error: ${error.message}\n`;
-                renderTasks();
             }
             break;
         case 'cancel':
@@ -428,6 +760,17 @@ taskListsWrapper.addEventListener('click', async (e) => {
             taskItem.classList.add('archiving');
             setTimeout(renderTasks, 300);
             break;
+        case 'rerun':
+            {
+                const goalToRun = task.originalGoal || task.summary;
+                if (!goalToRun) {
+                    showToast('No original goal found for rerun.', 'error');
+                    return;
+                }
+                goalInput.value = goalToRun;
+                await runGoal(goalToRun);
+            }
+            break;
     }
 });
 
@@ -458,6 +801,123 @@ resetAllBtn.addEventListener('click', () => {
         showToast('Application has been reset.', 'success');
     }
 });
+
+// --- AUTH MODAL LOGIC ---
+async function startAuthLogin(provider) {
+    try {
+        const response = await fetch('/api/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ provider })
+        });
+        const result = await response.json();
+        if (!response.ok) {
+            showToast(result.error || 'Login failed to start.', 'error');
+            return;
+        }
+        showToast(`Login started: ${result.command}`, 'success');
+    } catch (error) {
+        showToast(`Login error: ${error.message}`, 'error');
+    }
+}
+
+async function setAuthProvider(provider) {
+    try {
+        const response = await fetch('/api/auth/set-provider', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ provider })
+        });
+        const result = await response.json();
+        if (!response.ok) {
+            showToast(result.error || 'Failed to set provider.', 'error');
+            return;
+        }
+        showToast(`Provider set to ${provider}.`, 'success');
+        await refreshAuthStatus();
+    } catch (error) {
+        showToast(`Provider error: ${error.message}`, 'error');
+    }
+}
+
+async function setAuthModel(provider, model) {
+    try {
+        const response = await fetch('/api/auth/set-model', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ provider, model })
+        });
+        const result = await response.json();
+        if (!response.ok) {
+            showToast(result.error || 'Failed to set model.', 'error');
+            return;
+        }
+        showToast(`${provider.toUpperCase()} model set to ${model}.`, 'success');
+        await refreshAuthStatus();
+    } catch (error) {
+        showToast(`Model error: ${error.message}`, 'error');
+    }
+}
+
+if (authActionCodexBtn) {
+    authActionCodexBtn.addEventListener('click', () => {
+        const action = authActionCodexBtn.dataset.action;
+        if (action === 'login') startAuthLogin('codex');
+        if (action === 'use') setAuthProvider('codex');
+    });
+}
+if (authActionGeminiBtn) {
+    authActionGeminiBtn.addEventListener('click', () => {
+        const action = authActionGeminiBtn.dataset.action;
+        if (action === 'login') startAuthLogin('gemini');
+        if (action === 'use') setAuthProvider('gemini');
+    });
+}
+if (authModelCodex) {
+    authModelCodex.addEventListener('change', (e) => setAuthModel('codex', e.target.value));
+}
+if (authModelGemini) {
+    authModelGemini.addEventListener('change', (e) => setAuthModel('gemini', e.target.value));
+}
+async function setToolToggle(tool, enabled) {
+    try {
+        const response = await fetch('/api/settings/tool-toggle', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ tool, enabled })
+        });
+        const result = await response.json();
+        if (!response.ok) {
+            showToast(result.error || 'Failed to update tool toggle.', 'error');
+            return;
+        }
+        showToast(`${tool} ${enabled ? 'enabled' : 'disabled'}.`, 'success');
+    } catch (error) {
+        showToast(`Toggle error: ${error.message}`, 'error');
+    }
+}
+if (toggleTavily) {
+    toggleTavily.addEventListener('change', (e) => setToolToggle('tavily', e.target.checked));
+}
+if (toggleFirecrawl) {
+    toggleFirecrawl.addEventListener('change', (e) => setToolToggle('firecrawl', e.target.checked));
+}
+if (authRefreshBtn) {
+    authRefreshBtn.addEventListener('click', refreshAuthStatus);
+}
+if (closeAuthModalButton) {
+    closeAuthModalButton.addEventListener('click', () => {
+        authModalPinned = false;
+        authModal.classList.add('d-none');
+    });
+}
+if (loginButton) {
+    loginButton.addEventListener('click', () => {
+        authModalPinned = true;
+        authModal.classList.remove('d-none');
+        refreshAuthStatus();
+    });
+}
 
 // --- MODAL LOGIC ---
 let qrCodeFetched = false;
@@ -553,4 +1013,5 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     document.getElementById('tasks-list').style.display = 'flex';
     renderTasks();
+    refreshAuthStatus();
 });

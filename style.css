@@ -80,6 +80,31 @@ body {
 .prompt-textarea { width: 100%; background-color: var(--bg-color); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 16px; padding: 15px; font-size: 16px; font-family: inherit; line-height: 1.5; resize: vertical; min-height: 80px; outline: none; transition: border-color 0.2s, box-shadow 0.2s; }
 .prompt-textarea::placeholder { color: var(--text-secondary); }
 .prompt-textarea:focus { border-color: var(--focus-ring); box-shadow: 0 0 0 3px rgba(90, 72, 148, 0.4); }
+.intent-badge { align-self: flex-start; background-color: var(--surface-darker); color: var(--text-secondary); border: 1px solid var(--border-color); padding: 4px 10px; border-radius: 999px; font-size: 12px; letter-spacing: 0.2px; }
+.wizard { background: linear-gradient(135deg, rgba(36,34,51,0.6), rgba(30,29,43,0.9)); border: 1px solid var(--border-color); border-radius: 16px; padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; animation: fade-in 0.3s ease; }
+.wizard-header { display: flex; align-items: center; justify-content: space-between; font-size: 12px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-secondary); }
+.wizard-title { font-weight: 600; }
+.wizard-controls { display: flex; align-items: center; gap: 10px; }
+.wizard-status { color: var(--text-primary); }
+.wizard-stop { background-color: transparent; color: var(--text-secondary); border: 1px solid var(--border-color); border-radius: 999px; padding: 4px 10px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.4px; cursor: pointer; }
+.wizard-stop:hover { color: var(--text-bright); border-color: var(--text-secondary); }
+.wizard-stop:disabled { opacity: 0.5; cursor: not-allowed; }
+.wizard-progress { width: 100%; height: 6px; background-color: var(--surface-darker); border-radius: 999px; overflow: hidden; }
+.wizard-progress-bar { height: 100%; width: 0%; background: linear-gradient(90deg, var(--primary-action), #7b6bd6); transition: width 0.4s ease; }
+.wizard-steps { list-style: none; display: grid; gap: 8px; padding-left: 0; margin: 0; }
+.wizard-step { position: relative; padding-left: 22px; font-size: 13px; color: var(--text-secondary); }
+.wizard-step::before { content: ''; position: absolute; left: 0; top: 6px; width: 10px; height: 10px; border-radius: 50%; background-color: var(--surface-darker); border: 1px solid var(--border-color); }
+.wizard-step.is-active { color: var(--text-primary); }
+.wizard-step.is-active::before { background-color: var(--primary-action); box-shadow: 0 0 0 3px rgba(90, 72, 148, 0.3); }
+.wizard-step.is-done { color: var(--text-primary); }
+.wizard-step.is-done::before { background-color: var(--status-running-text); border-color: var(--status-running-border); }
+.wizard-step.is-error { color: var(--status-failed-text); }
+.wizard-step.is-error::before { background-color: var(--status-failed-text); border-color: var(--status-failed-border); }
+.wizard-plan { display: flex; flex-direction: column; gap: 10px; background-color: rgba(0,0,0,0.15); border: 1px solid var(--border-color); border-radius: 12px; padding: 12px; }
+.wizard-plan-header { font-size: 12px; letter-spacing: 0.4px; text-transform: uppercase; color: var(--text-secondary); }
+.wizard-plan-steps { margin: 0; padding-left: 18px; display: grid; gap: 6px; font-size: 13px; color: var(--text-primary); }
+.wizard-confirm { align-self: flex-start; background-color: var(--primary-action); color: var(--text-bright); border: none; border-radius: 999px; padding: 8px 14px; font-size: 12px; font-weight: 700; letter-spacing: 0.3px; cursor: pointer; }
+.wizard-confirm:hover { background-color: var(--primary-action-hover); }
 .action-buttons { display: flex; gap: 10px; }
 .action-buttons button { flex-grow: 1; color: #C0C0C0; border: none; border-radius: 20px; padding: 12px 15px; font-size: 15px; font-weight: 600; cursor: pointer; transition: transform 0.1s ease, background-color 0.2s ease, filter 0.2s ease; }
 .action-buttons button.schedule-btn { background-color: var(--surface-darker); cursor: not-allowed; opacity: 0.6; }
@@ -87,6 +112,8 @@ body {
 .action-buttons button:hover:not(:disabled) { background-color: var(--primary-action-hover); filter: brightness(1.1); }
 .action-buttons button:active:not(:disabled) { transform: scale(0.95); filter: brightness(0.9); }
 .action-buttons button:disabled { opacity: 0.5; cursor: wait; }
+.secondary { background-color: var(--surface-darker); color: var(--text-primary); border: 1px solid var(--border-color); }
+.secondary:hover { filter: brightness(1.1); }
 
 /* --- Tasks Section --- */
 .tasks-container { display: flex; flex-direction: column; gap: 20px; }
@@ -123,6 +150,11 @@ body {
 .task-item[open] .task-summary::after { transform: rotate(45deg); }
 .task-info h3 { font-size: 17px; font-weight: 500; margin-bottom: 4px; }
 .task-info p { font-size: 14px; color: var(--text-secondary); }
+.provider-tag { display: inline-block; margin-left: 8px; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; letter-spacing: 0.4px; background-color: var(--surface-darker); color: var(--text-secondary); border: 1px solid var(--border-color); vertical-align: middle; }
+.provider-codex { color: var(--status-running-text); border-color: var(--status-running-border); }
+.provider-gemini { color: var(--status-scheduled-text); border-color: var(--status-scheduled-border); }
+.model-tag { display: inline-block; margin-top: 6px; padding: 2px 8px; border-radius: 999px; font-size: 10px; font-weight: 600; letter-spacing: 0.2px; background-color: var(--bg-color); color: var(--text-secondary); border: 1px solid var(--border-color); }
+.reason-tag { display: inline-block; margin-top: 6px; padding: 2px 8px; border-radius: 999px; font-size: 10px; font-weight: 600; letter-spacing: 0.2px; background-color: #eef2ff; color: #1f2937; border: 1px solid #dfe3ff; max-width: 100%; }
 .task-details-content { padding: 0 20px 20px 20px; border-top: 1px solid var(--border-color); margin: 0 15px; color: #B0B0B0; font-size: 14px; line-height: 1.6; }
 .task-item .task-details-content { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 0.3s ease-in-out; } /* Animation for expand/collapse */
 .task-item[open] .task-details-content { grid-template-rows: 1fr; }
@@ -169,6 +201,9 @@ pre.status-log { background-color: var(--bg-color); padding: 12px; border-radius
 .setting-item { display: flex; justify-content: space-between; align-items: center; background: var(--surface-color); padding: 15px; border-radius: 12px; }
 .setting-info h4 { font-size: 16px; font-weight: 500; margin-bottom: 5px; }
 .setting-info p { font-size: 14px; line-height: 1.5; color: var(--text-secondary); max-width: 300px; }
+.toggle-group { display: flex; flex-direction: column; gap: 8px; }
+.toggle { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-secondary); }
+.toggle input { accent-color: var(--primary-action); }
 .button-danger { background-color: var(--danger-color); color: var(--text-bright); border: none; border-radius: 8px; padding: 10px 15px; font-size: 14px; font-weight: 600; cursor: pointer; transition: background-color 0.2s; display: flex; align-items: center; gap: 8px; }
 .button-danger:hover { background-color: var(--danger-hover-color); }
 .list-actions-header { display: flex; justify-content: flex-end; padding-bottom: 15px; border-bottom: 1px solid var(--border-color); margin-bottom: -5px; }
@@ -177,12 +212,31 @@ pre.status-log { background-color: var(--bg-color); padding: 12px; border-radius
 /* --- Connect Button & Modal --- */
 .connect-btn { position: absolute; top: 0; right: 0; background: none; border: none; color: var(--text-secondary); font-size: 24px; cursor: pointer; padding: 10px; transition: color 0.2s; }
 .connect-btn:hover { color: var(--text-bright); }
+.login-btn { position: absolute; top: 0; right: 44px; background: none; border: none; color: var(--text-secondary); font-size: 22px; cursor: pointer; padding: 10px; transition: color 0.2s; }
+.login-btn:hover { color: var(--text-bright); }
 .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.7); backdrop-filter: blur(5px); display: flex; justify-content: center; align-items: center; z-index: 1000; animation: fade-in 0.3s; }
 .modal-content { background-color: var(--surface-color); padding: 30px; border-radius: 16px; text-align: center; max-width: 400px; width: 90%; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3); position: relative; }
 .close-btn { position: absolute; top: 10px; right: 15px; background: none; border: none; color: var(--text-secondary); font-size: 28px; cursor: pointer; line-height: 1; }
 .qr-code-wrapper { background-color: white; border-radius: 8px; padding: 15px; margin: 20px auto; width: 200px; height: 200px; display: flex; justify-content: center; align-items: center; }
 #qr-code-image { max-width: 100%; max-height: 100%; }
 code#connect-url { background-color: var(--bg-color); padding: 5px 10px; border-radius: 6px; }
+
+/* --- Auth Modal Styles --- */
+.auth-modal { max-width: 520px; text-align: left; }
+.auth-providers { display: grid; gap: 15px; margin-top: 20px; }
+.auth-card { background-color: var(--surface-darker); border: 1px solid var(--border-color); border-radius: 12px; padding: 15px; display: flex; flex-direction: column; gap: 10px; }
+.auth-card-header { display: flex; align-items: center; justify-content: space-between; }
+.auth-status { font-size: 12px; padding: 4px 8px; border-radius: 999px; background-color: var(--bg-color); color: var(--text-secondary); }
+.auth-status.ready { color: var(--status-running-text); border: 1px solid var(--status-running-border); }
+.auth-status.missing { color: var(--status-failed-text); border: 1px solid var(--status-failed-border); }
+.auth-actions { display: flex; gap: 10px; }
+.auth-actions button { flex: 1; border-radius: 12px; padding: 10px 12px; font-weight: 600; border: none; cursor: pointer; }
+.auth-actions button.primary { background-color: var(--primary-action); color: var(--text-bright); }
+.auth-actions button.secondary { background-color: var(--surface-active); color: var(--text-primary); border: 1px solid var(--border-color); }
+.auth-actions button:disabled { opacity: 0.5; cursor: not-allowed; }
+.auth-model { width: 100%; background-color: var(--bg-color); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 10px; padding: 8px 10px; font-size: 12px; }
+.auth-command { background-color: var(--bg-color); padding: 6px 10px; border-radius: 8px; font-size: 12px; display: inline-block; }
+.auth-footer { display: flex; justify-content: flex-end; margin-top: 15px; }
 
 /* --- Credentials Modal Styles --- */
 .credentials-form { display: flex; flex-direction: column; gap: 15px; margin-top: 20px; }

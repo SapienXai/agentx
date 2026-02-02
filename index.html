@@ -16,6 +16,9 @@
             <button id="connect-button" class="connect-btn" title="Connect a mobile device">
                 <i class="bi bi-qr-code-scan"></i>
             </button>
+            <button id="login-button" class="login-btn" title="Connect AI provider">
+                <i class="bi bi-person-check"></i>
+            </button>
             <img src="./agentx.gif" alt="BrowserX Logo" class="logo">
             <h1 class="brand-name">AgentX</h1>
             <h2>What are we browsing next?</h2>
@@ -28,6 +31,30 @@
                       rows="3"
                       aria-label="AI agent prompt"
                       placeholder="e.g., 'Scroll today's tech headlines and summarize the top 5 articles about AI.'"></textarea>
+            <div id="intent-badge" class="intent-badge d-none">Detected: ...</div>
+            <div id="wizard-panel" class="wizard d-none">
+                <div class="wizard-header">
+                    <span class="wizard-title">Plan Progress</span>
+                    <div class="wizard-controls">
+                        <span id="wizard-status" class="wizard-status">Idle</span>
+                        <button id="wizard-stop" class="wizard-stop">Stop</button>
+                    </div>
+                </div>
+                <div class="wizard-progress">
+                    <div id="wizard-progress-bar" class="wizard-progress-bar"></div>
+                </div>
+                <ol class="wizard-steps">
+                    <li id="wizard-step-input" class="wizard-step is-active">Input</li>
+                    <li id="wizard-step-intent" class="wizard-step">Understanding</li>
+                    <li id="wizard-step-plan" class="wizard-step">Plan</li>
+                    <li id="wizard-step-queue" class="wizard-step">Queue</li>
+                </ol>
+                <div id="wizard-plan" class="wizard-plan d-none">
+                    <div class="wizard-plan-header">Plan Preview</div>
+                    <ol id="wizard-plan-steps" class="wizard-plan-steps"></ol>
+                    <button id="wizard-confirm-run" class="wizard-confirm">Confirm & Run</button>
+                </div>
+            </div>
             <div class="action-buttons">
                 <button class="schedule-btn" disabled>schedule</button>
                 <button id="run-button" class="primary">Create & Run Agent</button>
@@ -117,6 +144,29 @@
                     <h3>Application Settings</h3>
                     <div class="setting-item">
                         <div class="setting-info">
+                            <h4>Browser Engine</h4>
+                            <p class="text-muted">Chrome DevTools MCP is the only supported engine.</p>
+                        </div>
+                        <div class="auth-model">Chrome DevTools MCP</div>
+                    </div>
+                    <div class="setting-item">
+                        <div class="setting-info">
+                            <h4>Optional Tools</h4>
+                            <p class="text-muted">Enable Tavily search or Firecrawl scraping when needed.</p>
+                        </div>
+                        <div class="toggle-group">
+                            <label class="toggle">
+                                <input type="checkbox" id="toggle-tavily">
+                                <span>Tavily</span>
+                            </label>
+                            <label class="toggle">
+                                <input type="checkbox" id="toggle-firecrawl">
+                                <span>Firecrawl</span>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="setting-item">
+                        <div class="setting-info">
                             <h4>Reset Application</h4>
                             <p class="text-muted">This will permanently delete all tasks, including active, queued, and archived tasks. This action cannot be undone.</p>
                         </div>
@@ -156,6 +206,49 @@
                 <input type="password" id="password-input" placeholder="Password" required>
                 <button type="submit" class="primary">Save & Continue</button>
             </form>
+        </div>
+    </div>
+
+    <div id="auth-modal" class="modal-overlay d-none">
+        <div class="modal-content auth-modal">
+            <button id="close-auth-modal-button" class="close-btn">×</button>
+            <h3>Connect an AI Provider</h3>
+            <p class="text-muted">Pick one provider. The active one is highlighted and used for all tasks.</p>
+            <div class="auth-providers">
+                <div class="auth-card">
+                    <div class="auth-card-header">
+                        <strong>Codex CLI</strong>
+                        <span id="auth-status-codex" class="auth-status">Checking...</span>
+                    </div>
+                    <p class="text-muted">Uses your Codex CLI login to power planning and execution.</p>
+                    <div class="auth-actions">
+                        <button id="auth-action-codex" class="primary" disabled>Checking...</button>
+                    </div>
+                    <select id="auth-model-codex" class="auth-model" aria-label="Codex model">
+                        <option value="gpt-5.1-codex-mini">gpt-5.1-codex-mini (fast)</option>
+                        <option value="gpt-5.1-codex">gpt-5.1-codex</option>
+                    </select>
+                    <code id="auth-command-codex" class="auth-command">codex login</code>
+                </div>
+                <div class="auth-card">
+                    <div class="auth-card-header">
+                        <strong>Gemini CLI</strong>
+                        <span id="auth-status-gemini" class="auth-status">Checking...</span>
+                    </div>
+                    <p class="text-muted">Uses your Gemini CLI session for agent decisions.</p>
+                    <div class="auth-actions">
+                        <button id="auth-action-gemini" class="primary" disabled>Checking...</button>
+                    </div>
+                    <select id="auth-model-gemini" class="auth-model" aria-label="Gemini model">
+                        <option value="gemini-3-flash">gemini-3-flash (fast)</option>
+                        <option value="gemini-3-pro">gemini-3-pro</option>
+                    </select>
+                    <code id="auth-command-gemini" class="auth-command">gemini</code>
+                </div>
+            </div>
+            <div class="auth-footer">
+                <button id="auth-refresh" class="secondary">I logged in, refresh</button>
+            </div>
         </div>
     </div>
 

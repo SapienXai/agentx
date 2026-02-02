@@ -3,13 +3,22 @@
 const TavilyClient = require('@tavily/core').tavily;
 const FirecrawlApp = require('@mendable/firecrawl-js').default;
 
-const tavilyClient = new TavilyClient({
-    apiKey: process.env.TAVILY_API_KEY
-});
+const tavilyClient = process.env.TAVILY_API_KEY
+    ? new TavilyClient({ apiKey: process.env.TAVILY_API_KEY })
+    : null;
 
-const firecrawl = new FirecrawlApp({
-    apiKey: process.env.FIRECRAWL_API_KEY
-});
+const firecrawl = process.env.FIRECRAWL_API_KEY
+    ? new FirecrawlApp({ apiKey: process.env.FIRECRAWL_API_KEY })
+    : null;
+
+let toolToggles = { tavily: false, firecrawl: false };
+
+function setToolToggles(next) {
+    toolToggles = {
+        tavily: Boolean(next && next.tavily),
+        firecrawl: Boolean(next && next.firecrawl),
+    };
+}
 
 /**
  * Performs a search using the Tavily API.
@@ -19,6 +28,16 @@ const firecrawl = new FirecrawlApp({
  */
 async function tavilySearch(query, onLog = console.log) {
     onLog(`🔎 Performing Tavily search for: "${query}"`);
+    if (!toolToggles.tavily) {
+        const message = 'Tavily is disabled in settings.';
+        onLog(`🚨 ${message}`);
+        throw new Error(message);
+    }
+    if (!tavilyClient) {
+        const message = 'Tavily API key is missing. Set TAVILY_API_KEY to enable search.';
+        onLog(`🚨 ${message}`);
+        throw new Error(message);
+    }
     try {
         const response = await tavilyClient.search(query, {
             search_depth: "advanced",
@@ -39,6 +58,16 @@ async function tavilySearch(query, onLog = console.log) {
  */
 async function firecrawlScrape(url, onLog = console.log) {
     onLog(`🔥 Performing Firecrawl scrape for: "${url}"`);
+    if (!toolToggles.firecrawl) {
+        const message = 'Firecrawl is disabled in settings.';
+        onLog(`🚨 ${message}`);
+        throw new Error(message);
+    }
+    if (!firecrawl) {
+        const message = 'Firecrawl API key is missing. Set FIRECRAWL_API_KEY to enable scraping.';
+        onLog(`🚨 ${message}`);
+        throw new Error(message);
+    }
     try {
         // +++ THE DEFINITIVE FIX +++
         // The `pageOptions` key is deprecated. The options should be passed directly at the top level.
@@ -57,4 +86,4 @@ async function firecrawlScrape(url, onLog = console.log) {
     }
 }
 
-module.exports = { tavilySearch, firecrawlScrape };
+module.exports = { tavilySearch, firecrawlScrape, setToolToggles };

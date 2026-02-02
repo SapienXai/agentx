@@ -37,7 +37,7 @@ cd agentx
 
 ### 3. Install Dependencies
 
-This single command installs all necessary packages and also triggers Playwright to download the required browser binaries for automation.
+This single command installs all necessary packages for the app and the MCP browser integration.
 
 ```bash
 npm install
@@ -63,10 +63,10 @@ Edit the `.env` file and add your API keys. It should look like this:
 # Required for planning and decision-making
 OPENAI_API_KEY=sk-...
 
-# Required for advanced web search
+# Optional: advanced web search (falls back to browser automation if missing)
 TAVILY_API_KEY=tvly-...
 
-# Required for reliable web scraping
+# Optional: reliable web scraping (falls back to browser automation if missing)
 FIRECRAWL_API_KEY=fc-...
 ```
 
@@ -76,15 +76,15 @@ FIRECRAWL_API_KEY=fc-...
   - Get your key: [platform.openai.com/api-keys](https://platform.openai.com/api-keys)
   - Note: You'll need to have some credits on your OpenAI account. New accounts often come with free trial credits.
 
-- **🔑 Tavily AI**: The agent's specialized search tool. It's much more effective for AI agents than a standard Google search.
+- **🔑 Tavily AI** (Optional): The agent's specialized search tool. If missing, the agent will fall back to browser automation.
   - Get your key: [app.tavily.com](https://app.tavily.com)
   - Note: Tavily offers a generous free tier with 1,000 API calls per month.
 
-- **🔑 Firecrawl**: The agent's web scraping tool, for instantly turning websites into clean, usable data.
+- **🔑 Firecrawl** (Optional): The agent's web scraping tool, for instantly turning websites into clean, usable data. If missing, the agent will fall back to browser automation.
   - Get your key: [firecrawl.dev](https://firecrawl.dev)
   - Note: Firecrawl also has a free tier that is sufficient for most use cases.
 
-**Important**: The application will not start without these API keys.
+**Important**: The application can start without Tavily/Firecrawl. You only need a working LLM provider (OpenAI API key or Codex/Gemini CLI login).
 
 ### 5. Run the Application
 
@@ -118,18 +118,15 @@ The agent operates on a sophisticated loop that combines high-level planning wit
 ### Goal Input & Planning:
 
 - The user provides a high-level goal (e.g., "Find the top 3 AI news headlines from Google News and summarize them").
-- The `createPlan` function sends this goal to GPT-4o, which returns a structured JSON plan, including a task summary, a target URL, recurring schedule information (if any), and a step-by-step plan.
+- The `createToolPlan` function sends this goal to the active LLM provider, which returns a structured JSON plan, including a task summary, a target URL, recurring schedule information (if any), and a high-level step list.
 - **User Approval**: The generated plan is displayed in the UI for user confirmation.
 
 ### Autonomous Execution Loop (`runAutonomousAgent`):
 
-- Once approved, the agent starts its execution loop. The core logic is handled by the `decideNextAction` function.
-- **Tool Selection**: For each step, `decideNextAction` analyzes the goal, plan, and previous action results to choose the best tool for the job.
-  - If the task is to search the web, it uses the `tavily_search` tool.
-  - If the task is to scrape a specific URL, it uses the `firecrawl_scrape` tool.
-  - Only if direct visual interaction is required (e.g., logging in, clicking a button without a clear API), it falls back to using Playwright to control a browser.
-- **Action Execution**: The chosen action (e.g., `tavily_search`, `click`, `type`, `finish`) is executed.
-- **Feedback & Iteration**: The result of the action (e.g., search results, scraped content, or an error message) is fed back into the `decideNextAction` function for the next iteration. This allows the agent to self-correct. For example, if a `firecrawl_scrape` fails on one URL, it will try a different URL from the last search result.
+- Once approved, the agent starts its execution loop. The core logic is handled by the `decideNextToolAction` step controller.
+- **Tool Selection**: For each step, the controller analyzes the goal, plan, and previous action results to choose the best tool for the job from the live MCP tool catalog (plus optional Tavily/Firecrawl if enabled).
+- **Action Execution**: The chosen action (e.g., `navigate`, `click`, `type`, `tavily_search`, `summarize`, `finish`) is executed.
+- **Feedback & Iteration**: The result of the action (e.g., search results, scraped content, or an error message) is fed back into the controller for the next iteration. This allows the agent to self-correct and replan when the page state changes (captcha, access denied, empty content).
 - **Completion**: The loop continues until the `finish` action is called with a final summary, the agent is stopped by the user, or it reaches the maximum step limit.
 
 ---
@@ -139,7 +136,7 @@ The agent operates on a sophisticated loop that combines high-level planning wit
 - 🧠 **Advanced AI Planning**: Leverages GPT-4o to create structured, actionable plans from natural language inputs.
 - 🔍 **Intelligent Web Search**: Uses Tavily AI for optimized, AI-agent-friendly search results.
 - 📊 **Reliable Web Scraping**: Firecrawl ensures clean, structured data extraction from websites.
-- 🌐 **Browser Automation**: Playwright handles complex browser interactions when needed, with fallback for visual tasks.
+- 🌐 **Browser Automation**: Chrome DevTools MCP handles browser interactions with tool-aware step control.
 - 🖥️ **User-Friendly Interface**: Built with Tauri for a seamless desktop experience, including task management and scheduling.
 - 🔄 **Self-Correcting Loop**: The agent adapts to errors or unexpected results by re-evaluating and choosing alternative actions.
 
@@ -167,7 +164,7 @@ The agent operates on a sophisticated loop that combines high-level planning wit
 - **Core AI**: OpenAI GPT-4o for planning and decision-making.
 - **Search**: Tavily AI for advanced web search.
 - **Scraping**: Firecrawl for reliable web data extraction.
-- **Browser Automation**: Playwright for browser control.
+- **Browser Automation**: Chrome DevTools MCP for browser control.
 - **Frontend/Backend**: Tauri for the desktop application.
 - **Runtime**: Node.js for JavaScript execution.
 - **Dependencies**: Managed via npm.

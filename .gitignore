@@ -41,5 +41,6 @@ package-lock.json
 
 # ... other ignored files ...
 credential_store.json
+auth_state.json
 *.zip
 scheduled_tasks.json
